@@ -228,9 +228,9 @@ Creates a new webset collection with optional automatic population and enrichmen
 **Parameters:**
 - `name` (optional): Name for the webset
 - `description` (optional): Description of what the webset contains
-- `externalId` (optional): Your own identifier
+- `externalId` (optional): Your own identifier (max 300 chars)
 - `searchQuery` (optional): Natural language query to find entities
-- `searchCount` (optional): Number of entities to find (default: 10)
+- `searchCount` (optional): Number of entities to find (default: 10, min: 1)
 - `searchCriteria` (optional): Additional filtering criteria
 - `enrichments` (optional): Array of enrichments to extract
 
@@ -289,7 +289,7 @@ Sets up automated monitoring with a cron schedule.
 
 **Parameters:**
 - `websetId`: The ID of the webset
-- `schedule`: Cron expression (e.g., "0 9 * * 1" for Mondays at 9am)
+- `cron`: Cron expression (e.g., "0 9 * * 1" for Mondays at 9am)
 - `behavior`: Either "search" (find new items) or "refresh" (update existing)
 - `name` (optional): Name for the monitor
 - `enabled` (optional): Start enabled (default: true)
@@ -409,8 +409,10 @@ websets-mcp-server/
 │   │   ├── deleteWebset.ts
 │   │   ├── listItems.ts
 │   │   ├── createEnrichment.ts
-│   │   └── createMonitor.ts
+│   │   ├── createMonitor.ts
+│   │   └── ...
 │   └── utils/
+│       ├── api.ts            # Shared API client and error handling
 │       └── logger.ts         # Logging utilities
 ├── package.json
 └── tsconfig.json
