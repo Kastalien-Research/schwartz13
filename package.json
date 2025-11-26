@@ -1,6 +1,6 @@
 {
   "name": "websets-mcp-server",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "A Model Context Protocol server for Exa Websets API. Create, manage, and enrich collections of web entities (companies, people, papers) with automated search, enrichments, and monitoring capabilities.",
   "mcpName": "io.github.exa-labs/websets-mcp-server",
   "type": "module",
