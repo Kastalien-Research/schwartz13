@@ -56,6 +56,32 @@ export const update: OperationHandler = async (args, exa) => {
   }
 };
 
+export const waitUntilCompleted: OperationHandler = async (args, exa) => {
+  try {
+    const id = args.id as string;
+    const timeout = (args.timeout as number | undefined) ?? 300_000;
+    const pollInterval = (args.pollInterval as number | undefined) ?? 2_000;
+    const response = await exa.websets.imports.waitUntilCompleted(id, { timeout, pollInterval });
+    return successResult(response);
+  } catch (error) {
+    return errorResult('imports.waitUntilCompleted', error);
+  }
+};
+
+export const getAll: OperationHandler = async (args, exa) => {
+  try {
+    const maxItems = (args.maxItems as number | undefined) ?? 100;
+    const results: unknown[] = [];
+    for await (const item of exa.websets.imports.listAll()) {
+      results.push(item);
+      if (results.length >= maxItems) break;
+    }
+    return successResult({ data: results, count: results.length, truncated: results.length >= maxItems });
+  } catch (error) {
+    return errorResult('imports.getAll', error);
+  }
+};
+
 export const del: OperationHandler = async (args, exa) => {
   try {
     const response = await exa.websets.imports.delete(args.id as string);

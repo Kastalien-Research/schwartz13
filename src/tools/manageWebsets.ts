@@ -28,6 +28,8 @@ const OPERATIONS: Record<string, OperationMeta> = {
   'websets.delete': { handler: websets.del, summary: 'Delete a webset (args: id)' },
   'websets.cancel': { handler: websets.cancel, summary: 'Cancel a webset (args: id)' },
   'websets.preview': { handler: websets.preview, summary: 'Preview a webset query (args: query, count?, entity?, search?)' },
+  'websets.waitUntilIdle': { handler: websets.waitUntilIdle, summary: 'Poll until webset status becomes idle (args: id, timeout?, pollInterval?)' },
+  'websets.getAll': { handler: websets.getAll, summary: 'Auto-paginate all websets (args: maxItems?)' },
 
   // Searches domain
   'searches.create': { handler: searches.create, summary: 'Create a search on a webset (args: websetId, query, count?, entity?, criteria?, behavior?, recall?, metadata?)' },
@@ -38,6 +40,7 @@ const OPERATIONS: Record<string, OperationMeta> = {
   'items.list': { handler: items.list, summary: 'List items in a webset (args: websetId, limit?, cursor?)' },
   'items.get': { handler: items.get, summary: 'Get a specific item (args: websetId, itemId)' },
   'items.delete': { handler: items.del, summary: 'Delete an item (args: websetId, itemId)' },
+  'items.getAll': { handler: items.getAll, summary: 'Auto-paginate all items in a webset (args: websetId, maxItems?, sourceId?)' },
 
   // Enrichments domain
   'enrichments.create': { handler: enrichments.create, summary: 'Create an enrichment (args: websetId, description, format?, options?, metadata?)' },
@@ -52,6 +55,7 @@ const OPERATIONS: Record<string, OperationMeta> = {
   'monitors.list': { handler: monitors.list, summary: 'List monitors (args: limit?, cursor?, websetId?)' },
   'monitors.update': { handler: monitors.update, summary: 'Update a monitor (args: id, cadence?, behavior?, metadata?, status?)' },
   'monitors.delete': { handler: monitors.del, summary: 'Delete a monitor (args: id)' },
+  'monitors.getAll': { handler: monitors.getAll, summary: 'Auto-paginate all monitors (args: maxItems?, websetId?)' },
   'monitors.runs.list': { handler: monitors.runsList, summary: 'List monitor runs (args: monitorId, limit?, cursor?)' },
   'monitors.runs.get': { handler: monitors.runsGet, summary: 'Get a monitor run (args: monitorId, runId)' },
 
@@ -62,6 +66,8 @@ const OPERATIONS: Record<string, OperationMeta> = {
   'webhooks.update': { handler: webhooks.update, summary: 'Update a webhook (args: id, url?, events?, metadata?)' },
   'webhooks.delete': { handler: webhooks.del, summary: 'Delete a webhook (args: id)' },
   'webhooks.list_attempts': { handler: webhooks.listAttempts, summary: 'List webhook delivery attempts (args: id, limit?, cursor?, eventType?, successful?)' },
+  'webhooks.getAll': { handler: webhooks.getAll, summary: 'Auto-paginate all webhooks (args: maxItems?)' },
+  'webhooks.getAllAttempts': { handler: webhooks.getAllAttempts, summary: 'Auto-paginate all webhook attempts (args: id, maxItems?, eventType?, successful?)' },
 
   // Imports domain
   'imports.create': { handler: imports.create, summary: 'Create an import (args: format, entity, count, size, title?, csv?, metadata?)' },
@@ -69,10 +75,13 @@ const OPERATIONS: Record<string, OperationMeta> = {
   'imports.list': { handler: imports.list, summary: 'List imports (args: limit?, cursor?)' },
   'imports.update': { handler: imports.update, summary: 'Update an import (args: id, metadata?, title?)' },
   'imports.delete': { handler: imports.del, summary: 'Delete an import (args: id)' },
+  'imports.waitUntilCompleted': { handler: imports.waitUntilCompleted, summary: 'Poll until import completes or fails (args: id, timeout?, pollInterval?)' },
+  'imports.getAll': { handler: imports.getAll, summary: 'Auto-paginate all imports (args: maxItems?)' },
 
   // Events domain
   'events.list': { handler: events.list, summary: 'List events (args: limit?, cursor?, types?)' },
   'events.get': { handler: events.get, summary: 'Get an event (args: id)' },
+  'events.getAll': { handler: events.getAll, summary: 'Auto-paginate all events (args: maxItems?, types?)' },
 };
 
 const OPERATION_NAMES = Object.keys(OPERATIONS) as [string, ...string[]];

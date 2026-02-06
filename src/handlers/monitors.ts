@@ -101,6 +101,22 @@ export const del: OperationHandler = async (args, exa) => {
   }
 };
 
+export const getAll: OperationHandler = async (args, exa) => {
+  try {
+    const maxItems = (args.maxItems as number | undefined) ?? 100;
+    const opts: Record<string, unknown> = {};
+    if (args.websetId) opts.websetId = args.websetId;
+    const results: unknown[] = [];
+    for await (const item of exa.websets.monitors.listAll(opts as any)) {
+      results.push(item);
+      if (results.length >= maxItems) break;
+    }
+    return successResult({ data: results, count: results.length, truncated: results.length >= maxItems });
+  } catch (error) {
+    return errorResult('monitors.getAll', error);
+  }
+};
+
 export const runsList: OperationHandler = async (args, exa) => {
   try {
     const opts: Record<string, unknown> = {};

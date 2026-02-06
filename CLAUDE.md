@@ -22,7 +22,7 @@ npx vitest run src/handlers/__tests__/enrichments.test.ts  # Run a single test f
 
 ### Unified Dispatcher (v2.0.0)
 
-The server exposes a **single MCP tool** (`manage_websets`) that dispatches to 38 operations across 8 domains. This follows the Thoughtbox hub tool pattern.
+The server exposes a **single MCP tool** (`manage_websets`) that dispatches to 47 operations across 8 domains. This follows the Thoughtbox hub tool pattern.
 
 ### Entry Point
 
@@ -32,7 +32,7 @@ The server exposes a **single MCP tool** (`manage_websets`) that dispatches to 3
 
 ```typescript
 {
-  operation: z.enum([...38 operation names]),  // e.g. "websets.create", "searches.get"
+  operation: z.enum([...47 operation names]),  // e.g. "websets.create", "searches.get"
   args: z.record(z.string(), z.unknown()).optional()  // operation-specific args
 }
 ```
@@ -45,14 +45,14 @@ The server exposes a **single MCP tool** (`manage_websets`) that dispatches to 3
 
 | File | Operations | Count |
 |------|-----------|-------|
-| `websets.ts` | create, get, list, update, delete, cancel, preview | 7 |
+| `websets.ts` | create, get, list, update, delete, cancel, preview, waitUntilIdle, getAll | 9 |
 | `searches.ts` | create, get, cancel | 3 |
-| `items.ts` | list, get, delete | 3 |
+| `items.ts` | list, get, delete, getAll | 4 |
 | `enrichments.ts` | create, get, cancel, update, delete | 5 |
-| `monitors.ts` | create, get, list, update, delete, runsList, runsGet | 7 |
-| `webhooks.ts` | create, get, list, update, delete, listAttempts | 6 |
-| `imports.ts` | create, get, list, update, delete | 5 |
-| `events.ts` | list, get | 2 |
+| `monitors.ts` | create, get, list, update, delete, runsList, runsGet, getAll | 8 |
+| `webhooks.ts` | create, get, list, update, delete, listAttempts, getAll, getAllAttempts | 8 |
+| `imports.ts` | create, get, list, update, delete, waitUntilCompleted, getAll | 7 |
+| `events.ts` | list, get, getAll | 3 |
 
 Each handler exports named functions with signature `(args: Record<string, unknown>, exa: Exa) => Promise<ToolResult>`.
 

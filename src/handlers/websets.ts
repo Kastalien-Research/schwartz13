@@ -87,6 +87,32 @@ export const cancel: OperationHandler = async (args, exa) => {
   }
 };
 
+export const waitUntilIdle: OperationHandler = async (args, exa) => {
+  try {
+    const id = args.id as string;
+    const timeout = (args.timeout as number | undefined) ?? 300_000;
+    const pollInterval = (args.pollInterval as number | undefined) ?? 1_000;
+    const response = await exa.websets.waitUntilIdle(id, { timeout, pollInterval });
+    return successResult(response);
+  } catch (error) {
+    return errorResult('websets.waitUntilIdle', error);
+  }
+};
+
+export const getAll: OperationHandler = async (args, exa) => {
+  try {
+    const maxItems = (args.maxItems as number | undefined) ?? 100;
+    const results: unknown[] = [];
+    for await (const item of exa.websets.listAll()) {
+      results.push(item);
+      if (results.length >= maxItems) break;
+    }
+    return successResult({ data: results, count: results.length, truncated: results.length >= maxItems });
+  } catch (error) {
+    return errorResult('websets.getAll', error);
+  }
+};
+
 export const preview: OperationHandler = async (args, exa) => {
   try {
     const search: Record<string, unknown> = {
