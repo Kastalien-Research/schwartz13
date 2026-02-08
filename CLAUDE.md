@@ -22,7 +22,7 @@ npx vitest run src/handlers/__tests__/enrichments.test.ts  # Run a single test f
 
 ### Unified Dispatcher (v2.0.0)
 
-The server exposes a **single MCP tool** (`manage_websets`) that dispatches to 56 operations across 10 domains. This follows the Thoughtbox hub tool pattern.
+The server exposes a **single MCP tool** (`manage_websets`) that dispatches to 60 operations across 11 domains. This follows the Thoughtbox hub tool pattern.
 
 ### Entry Point
 
@@ -32,7 +32,7 @@ The server exposes a **single MCP tool** (`manage_websets`) that dispatches to 5
 
 ```typescript
 {
-  operation: z.enum([...56 operation names]),  // e.g. "websets.create", "searches.get"
+  operation: z.enum([...60 operation names]),  // e.g. "websets.create", "searches.get"
   args: z.record(z.string(), z.unknown()).optional()  // operation-specific args
 }
 ```
@@ -55,6 +55,7 @@ The server exposes a **single MCP tool** (`manage_websets`) that dispatches to 5
 | `events.ts` | list, get, getAll | 3 |
 | `tasks.ts` | create, get, result, list, cancel | 5 |
 | `research.ts` | create, get, list, pollUntilFinished | 4 |
+| `exa.ts` | search, findSimilar, getContents, answer | 4 |
 
 Each handler exports named functions with signature `(args: Record<string, unknown>, exa: Exa) => Promise<ToolResult>`.
 
@@ -80,6 +81,9 @@ Long-running background tasks created via `tasks.create`. Each workflow register
 | `qdWinnow.ts` | qd.winnow | Quality-diversity: criteria × enrichments |
 | `researchDeep.ts` | research.deep | Exa Research API wrapper |
 | `verifiedCollection.ts` | research.verifiedCollection | Collection + per-entity deep research |
+| `searchAndRead.ts` | retrieval.searchAndRead | Exa search + getContents for full text |
+| `expandAndCollect.ts` | retrieval.expandAndCollect | Search + findSimilar on top results |
+| `verifiedAnswer.ts` | retrieval.verifiedAnswer | Exa answer + source verification |
 
 ### Key Modules
 
@@ -109,7 +113,7 @@ Tests use **Vitest** with config in `vitest.config.ts` (excludes `dist/` dir). T
 ## Environment
 
 - **Required**: `EXA_API_KEY` environment variable (or passed via config)
-- **Node**: >=18.0.0
+- **Node**: >=20.0.0
 - **Module system**: ESM (`"type": "module"` in package.json)
 - TypeScript target: ES2022, module: Node16, strict mode
 

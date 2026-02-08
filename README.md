@@ -4,7 +4,7 @@ An MCP server for [Exa's Websets API](https://docs.exa.ai/reference/websets). We
 
 ## Unified Tool
 
-A single MCP tool (`manage_websets`) dispatches to 56 operations across 10 domains:
+A single MCP tool (`manage_websets`) dispatches to 60 operations across 11 domains:
 
 ```json
 {
@@ -31,6 +31,7 @@ A single MCP tool (`manage_websets`) dispatches to 56 operations across 10 domai
 | **events** | list, get, getAll | 3 |
 | **tasks** | create, get, result, list, cancel | 5 |
 | **research** | create, get, list, pollUntilFinished | 4 |
+| **exa** | search, findSimilar, getContents, answer | 4 |
 
 ## Response Projections
 
@@ -54,6 +55,9 @@ Long-running background tasks orchestrate multi-step research patterns. Create w
 | `qd.winnow` | Quality-diversity: criteria x enrichments | query, entity, criteria, enrichments, selectionStrategy? |
 | `research.deep` | Exa Research API question answering | instructions, model?, outputSchema? |
 | `research.verifiedCollection` | Collection + per-entity deep research | query, entity, researchPrompt, researchLimit? |
+| `retrieval.searchAndRead` | Exa search + getContents for full text | query, numResults?, type?, category? |
+| `retrieval.expandAndCollect` | Search + findSimilar on top results | query, numResults?, expandTop? |
+| `retrieval.verifiedAnswer` | Exa answer + source verification | query, model?, numValidation? |
 
 ### Examples
 

@@ -5,7 +5,6 @@ dist/
 .env
 .DS_Store
 .mcp.json
-run-websets-mcp.sh
 research-workflows/workflows.db
 
 # Claude Code runtime state
