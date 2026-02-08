@@ -24,6 +24,9 @@ import '../workflows/lifecycle.js';
 import '../workflows/adversarial.js';
 import '../workflows/convergent.js';
 import '../workflows/verifiedCollection.js';
+import '../workflows/searchAndRead.js';
+import '../workflows/expandAndCollect.js';
+import '../workflows/verifiedAnswer.js';
 
 // Operation metadata: name, handler, summary for description
 interface OperationMeta {
@@ -105,7 +108,10 @@ const OPERATIONS: Record<string, OperationMeta> = {
       '  convergent.search — N queries from different angles, deduplicate, find intersection (args: queries, entity, criteria?, count?)\n' +
       '  adversarial.verify — thesis vs antithesis websets + optional synthesis (args: thesis, thesisQuery, antithesisQuery, entity?, synthesize?)\n' +
       '  research.deep — Exa Research API wrapper (args: instructions, model?, outputSchema?)\n' +
-      '  research.verifiedCollection — webset collection + per-entity deep research (args: query, entity, researchPrompt, researchLimit?, researchSchema?)',
+      '  research.verifiedCollection — webset collection + per-entity deep research (args: query, entity, researchPrompt, researchLimit?, researchSchema?)\n' +
+      '  retrieval.searchAndRead — search + read full contents of top results (args: query, numResults?, type?, category?, includeDomains?, excludeDomains?, date filters)\n' +
+      '  retrieval.expandAndCollect — search + expand via findSimilar + deduplicate (args: query, numResults?, expandTop?, category?, date filters)\n' +
+      '  retrieval.verifiedAnswer — answer with citations + independent validation (args: query, model?, systemPrompt?, numValidation?)',
   },
   'tasks.get': { handler: tasks.get, summary: 'Get task status and progress (args: taskId)' },
   'tasks.result': { handler: tasks.result, summary: 'Get task result when completed (args: taskId)' },
@@ -153,6 +159,9 @@ QUICK START:
 - Multi-angle triangulation: tasks.create type=convergent.search
 - Quality-diversity analysis: tasks.create type=qd.winnow
 - Deep research question: tasks.create type=research.deep
+- Search + read pages: tasks.create type=retrieval.searchAndRead
+- Search + expand similar: tasks.create type=retrieval.expandAndCollect
+- Answer + verify: tasks.create type=retrieval.verifiedAnswer
 
 WORKFLOW GUIDE (long-running background tasks via tasks.create):
   lifecycle.harvest — search + enrich + collect (simplest end-to-end)
@@ -161,6 +170,9 @@ WORKFLOW GUIDE (long-running background tasks via tasks.create):
   qd.winnow — criteria × enrichments quality-diversity analysis (advanced)
   research.deep — Exa Research API question answering
   research.verifiedCollection — entity collection + per-entity deep research
+  retrieval.searchAndRead — instant search + full page read (fastest retrieval workflow)
+  retrieval.expandAndCollect — search + findSimilar expansion + deduplication
+  retrieval.verifiedAnswer — answer with citations + independent source validation
 
 PARAMETER FORMAT RULES:
 - criteria: MUST be [{description: "..."}] (array of objects, NOT strings)

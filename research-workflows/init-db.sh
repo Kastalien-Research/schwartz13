@@ -13,4 +13,7 @@ sqlite3 "$DB" < "$SCRIPT_DIR/schema.sql"
 # Seed with Exa-backed workflow archetypes
 sqlite3 "$DB" < "$SCRIPT_DIR/seed-workflows.sql"
 
-echo "Initialized $DB with schema + 5 Exa workflow archetypes"
+# Seed with retrieval orchestrations (exa.* Search API patterns)
+sqlite3 "$DB" < "$SCRIPT_DIR/seed-retrieval.sql"
+
+echo "Initialized $DB with schema + 5 webset archetypes + 20 retrieval orchestrations"
