@@ -1,5 +1,6 @@
 import type { Exa } from 'exa-js';
 import { OperationHandler, successResult, errorResult, requireParams } from './types.js';
+import { projectSearch } from '../lib/projections.js';
 
 const SEARCH_HINTS = `Common issues:
 - criteria must be array of objects: [{description: "criterion"}]
@@ -22,7 +23,7 @@ export const create: OperationHandler = async (args, exa) => {
     if (args.metadata) params.metadata = args.metadata;
 
     const response = await exa.websets.searches.create(websetId, params as any);
-    return successResult(response);
+    return successResult(projectSearch(response as unknown as Record<string, unknown>));
   } catch (error) {
     return errorResult('searches.create', error, SEARCH_HINTS);
   }
@@ -36,7 +37,7 @@ export const get: OperationHandler = async (args, exa) => {
       args.websetId as string,
       args.searchId as string,
     );
-    return successResult(response);
+    return successResult(projectSearch(response as unknown as Record<string, unknown>));
   } catch (error) {
     return errorResult('searches.get', error);
   }
@@ -50,7 +51,7 @@ export const cancel: OperationHandler = async (args, exa) => {
       args.websetId as string,
       args.searchId as string,
     );
-    return successResult(response);
+    return successResult(projectSearch(response as unknown as Record<string, unknown>));
   } catch (error) {
     return errorResult('searches.cancel', error);
   }

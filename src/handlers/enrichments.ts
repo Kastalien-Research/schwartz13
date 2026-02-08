@@ -1,5 +1,6 @@
 import type { Exa } from 'exa-js';
 import { OperationHandler, successResult, errorResult, requireParams, validationError } from './types.js';
+import { projectEnrichment } from '../lib/projections.js';
 
 const ENRICHMENT_HINTS = `Common issues:
 - options must be array of objects: [{label: "option"}]
@@ -30,7 +31,7 @@ export const create: OperationHandler = async (args, exa) => {
     if (args.metadata) params.metadata = args.metadata;
 
     const response = await exa.websets.enrichments.create(websetId, params as any);
-    return successResult(response);
+    return successResult(projectEnrichment(response as unknown as Record<string, unknown>));
   } catch (error) {
     return errorResult('enrichments.create', error, ENRICHMENT_HINTS);
   }
@@ -44,7 +45,7 @@ export const get: OperationHandler = async (args, exa) => {
       args.websetId as string,
       args.enrichmentId as string,
     );
-    return successResult(response);
+    return successResult(projectEnrichment(response as unknown as Record<string, unknown>));
   } catch (error) {
     return errorResult('enrichments.get', error);
   }
@@ -58,7 +59,7 @@ export const cancel: OperationHandler = async (args, exa) => {
       args.websetId as string,
       args.enrichmentId as string,
     );
-    return successResult(response);
+    return successResult(projectEnrichment(response as unknown as Record<string, unknown>));
   } catch (error) {
     return errorResult('enrichments.cancel', error);
   }
@@ -93,7 +94,7 @@ export const del: OperationHandler = async (args, exa) => {
       args.websetId as string,
       args.enrichmentId as string,
     );
-    return successResult(response);
+    return successResult(projectEnrichment(response as unknown as Record<string, unknown>));
   } catch (error) {
     return errorResult('enrichments.delete', error);
   }

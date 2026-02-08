@@ -1,5 +1,6 @@
 import type { OperationHandler } from './types.js';
 import { successResult, errorResult, requireParams } from './types.js';
+import { projectResearch } from '../lib/projections.js';
 
 export const create: OperationHandler = async (args, exa) => {
   const guard = requireParams('research.create', args, 'instructions');
@@ -11,7 +12,7 @@ export const create: OperationHandler = async (args, exa) => {
     if (args.model) params.model = args.model;
     if (args.outputSchema) params.outputSchema = args.outputSchema;
     const response = await exa.research.create(params as any);
-    return successResult(response);
+    return successResult(projectResearch(response as unknown as Record<string, unknown>));
   } catch (error) {
     return errorResult('research.create', error);
   }
@@ -25,7 +26,7 @@ export const get: OperationHandler = async (args, exa) => {
     if (args.events !== undefined) opts.events = args.events;
     const hasOpts = Object.keys(opts).length > 0;
     const response = await exa.research.get(args.researchId as string, hasOpts ? opts as any : undefined);
-    return successResult(response);
+    return successResult(projectResearch(response as unknown as Record<string, unknown>));
   } catch (error) {
     return errorResult('research.get', error);
   }
@@ -38,6 +39,11 @@ export const list: OperationHandler = async (args, exa) => {
     if (args.limit) opts.limit = args.limit;
     const hasOpts = Object.keys(opts).length > 0;
     const response = await exa.research.list(hasOpts ? opts as any : undefined);
+    const raw = response as unknown as Record<string, unknown>;
+    const data = raw.data as Record<string, unknown>[] | undefined;
+    if (data) {
+      return successResult({ ...raw, data: data.map(projectResearch) });
+    }
     return successResult(response);
   } catch (error) {
     return errorResult('research.list', error);
@@ -57,7 +63,7 @@ export const pollUntilFinished: OperationHandler = async (args, exa) => {
       args.researchId as string,
       hasOpts ? opts as any : undefined,
     );
-    return successResult(response);
+    return successResult(projectResearch(response as unknown as Record<string, unknown>));
   } catch (error) {
     return errorResult('research.pollUntilFinished', error);
   }

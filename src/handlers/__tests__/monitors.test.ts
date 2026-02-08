@@ -52,7 +52,9 @@ describe('monitors.create validation', () => {
       exa,
     );
     expect(result.isError).toBeUndefined();
-    expect(JSON.parse(result.content[0].text)).toEqual({ id: 'mon_123', status: 'enabled' });
+    const parsed = JSON.parse(result.content[0].text);
+    expect(parsed.id).toBe('mon_123');
+    expect(parsed.status).toBe('enabled');
   });
 
   it('passes correct nested params to SDK', async () => {

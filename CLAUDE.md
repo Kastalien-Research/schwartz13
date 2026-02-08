@@ -58,6 +58,13 @@ The server exposes a **single MCP tool** (`manage_websets`) that dispatches to 5
 
 Each handler exports named functions with signature `(args: Record<string, unknown>, exa: Exa) => Promise<ToolResult>`.
 
+### Response Projections (src/lib/projections.ts)
+
+All handler responses pass through domain-specific projection functions that extract decision-relevant fields and drop noise (timestamps, config, content, reasoning). This reduces agent context usage by 10-100×. Key behaviors:
+- **Items**: Bulk responses (`items.list`, `items.getAll`, workflow results) filter out items where no `evaluation.satisfied === "yes"` and project to `{id, name, url, entityType, description, evaluations, enrichments}`
+- **Items (single)**: `items.get` returns full raw response for inspection
+- **All domains**: Metadata preserved, timestamps/config stripped, entity type promoted to top level
+
 ### Workflows (src/workflows/)
 
 Long-running background tasks created via `tasks.create`. Each workflow registers itself in the workflow registry on import.
@@ -97,7 +104,7 @@ AI callers commonly get these wrong:
 
 ## Testing
 
-Tests use **Vitest** with config in `vitest.config.ts` (excludes `dist/` dir). Test files live in `src/handlers/__tests__/` and `src/workflows/__tests__/`. ~340 tests across 37 files. Tests mock the Exa client to verify handler logic, validation, and error formatting.
+Tests use **Vitest** with config in `vitest.config.ts` (excludes `dist/` dir). Test files live in `src/handlers/__tests__/`, `src/workflows/__tests__/`, and `src/lib/__tests__/`. ~365 tests across 38 files. Tests mock the Exa client to verify handler logic, validation, projections, and error formatting.
 
 ## Environment
 

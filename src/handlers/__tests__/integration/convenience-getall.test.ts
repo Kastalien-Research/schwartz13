@@ -48,12 +48,12 @@ describe.skipIf(!HAS_API_KEY)('convenience: getAll auto-pagination (integration)
     expect(data.count).toBeLessThanOrEqual(1);
   });
 
-  it('items.getAll — returns {data, count, truncated} for a webset', async () => {
+  it('items.getAll — returns {data, included, truncated} for a webset', async () => {
     const result = await items.getAll({ websetId, maxItems: 10 }, exa);
     expect(result.isError, result.content[0].text).toBeUndefined();
     const data = JSON.parse(result.content[0].text);
     expect(data).toHaveProperty('data');
-    expect(data).toHaveProperty('count');
+    expect(data).toHaveProperty('included');
     expect(data).toHaveProperty('truncated');
     expect(Array.isArray(data.data)).toBe(true);
   });

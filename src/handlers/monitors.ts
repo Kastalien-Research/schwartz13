@@ -1,5 +1,6 @@
 import type { Exa } from 'exa-js';
 import { OperationHandler, successResult, errorResult, requireParams, validationError } from './types.js';
+import { projectMonitor, projectMonitorRun } from '../lib/projections.js';
 
 export const create: OperationHandler = async (args, exa) => {
   const guard = requireParams('monitors.create', args, 'websetId', 'cron');
@@ -37,7 +38,7 @@ export const create: OperationHandler = async (args, exa) => {
     if (args.metadata) params.metadata = args.metadata;
 
     const response = await exa.websets.monitors.create(params as any);
-    return successResult(response);
+    return successResult(projectMonitor(response as unknown as Record<string, unknown>));
   } catch (error) {
     return errorResult('monitors.create', error);
   }
@@ -48,7 +49,7 @@ export const get: OperationHandler = async (args, exa) => {
   if (guard) return guard;
   try {
     const response = await exa.websets.monitors.get(args.id as string);
-    return successResult(response);
+    return successResult(projectMonitor(response as unknown as Record<string, unknown>));
   } catch (error) {
     return errorResult('monitors.get', error);
   }
@@ -62,6 +63,11 @@ export const list: OperationHandler = async (args, exa) => {
     if (args.websetId) opts.websetId = args.websetId;
 
     const response = await exa.websets.monitors.list(opts as any);
+    const raw = response as unknown as Record<string, unknown>;
+    const data = raw.data as Record<string, unknown>[] | undefined;
+    if (data) {
+      return successResult({ ...raw, data: data.map(projectMonitor) });
+    }
     return successResult(response);
   } catch (error) {
     return errorResult('monitors.list', error);
@@ -80,7 +86,7 @@ export const update: OperationHandler = async (args, exa) => {
     if (args.status) params.status = args.status;
 
     const response = await exa.websets.monitors.update(id, params as any);
-    return successResult(response);
+    return successResult(projectMonitor(response as unknown as Record<string, unknown>));
   } catch (error) {
     return errorResult('monitors.update', error);
   }
@@ -91,7 +97,7 @@ export const del: OperationHandler = async (args, exa) => {
   if (guard) return guard;
   try {
     const response = await exa.websets.monitors.delete(args.id as string);
-    return successResult(response);
+    return successResult(projectMonitor(response as unknown as Record<string, unknown>));
   } catch (error) {
     return errorResult('monitors.delete', error);
   }
@@ -107,7 +113,8 @@ export const getAll: OperationHandler = async (args, exa) => {
       results.push(item);
       if (results.length >= maxItems) break;
     }
-    return successResult({ data: results, count: results.length, truncated: results.length >= maxItems });
+    const projected = results.map(r => projectMonitor(r as Record<string, unknown>));
+    return successResult({ data: projected, count: projected.length, truncated: results.length >= maxItems });
   } catch (error) {
     return errorResult('monitors.getAll', error);
   }
@@ -125,6 +132,11 @@ export const runsList: OperationHandler = async (args, exa) => {
       args.monitorId as string,
       opts as any,
     );
+    const raw = response as unknown as Record<string, unknown>;
+    const data = raw.data as Record<string, unknown>[] | undefined;
+    if (data) {
+      return successResult({ ...raw, data: data.map(projectMonitorRun) });
+    }
     return successResult(response);
   } catch (error) {
     return errorResult('monitors.runs.list', error);
@@ -139,7 +151,7 @@ export const runsGet: OperationHandler = async (args, exa) => {
       args.monitorId as string,
       args.runId as string,
     );
-    return successResult(response);
+    return successResult(projectMonitorRun(response as unknown as Record<string, unknown>));
   } catch (error) {
     return errorResult('monitors.runs.get', error);
   }

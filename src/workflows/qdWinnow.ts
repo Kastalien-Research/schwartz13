@@ -10,6 +10,7 @@ import {
   collectItems,
   withSummary,
 } from './helpers.js';
+import { projectItem } from '../lib/projections.js';
 
 // --- Types ---
 
@@ -422,11 +423,17 @@ Assess:
   }
 
   const duration = Date.now() - startTime;
+  // Project items in elites at the output boundary
+  const projectedElites = elites.map(e => ({
+    ...e,
+    item: projectItem(e.item),
+  }));
+
   const result: Record<string, unknown> = {
     websetId,
     itemCount: items.length,
     nicheDistribution,
-    elites,
+    elites: projectedElites,
     qualityMetrics,
     descriptorFeedback,
     duration,

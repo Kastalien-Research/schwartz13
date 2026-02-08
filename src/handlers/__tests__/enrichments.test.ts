@@ -57,7 +57,9 @@ describe('enrichments.create validation', () => {
       exa,
     );
     expect(result.isError).toBeUndefined();
-    expect(JSON.parse(result.content[0].text)).toEqual({ id: 'enr_123', status: 'running' });
+    const parsed = JSON.parse(result.content[0].text);
+    expect(parsed.id).toBe('enr_123');
+    expect(parsed.status).toBe('running');
   });
 
   it('accepts text format without options', async () => {

@@ -10,6 +10,7 @@ import {
   validateEntity,
   withSummary,
 } from './helpers.js';
+import { projectItem } from '../lib/projections.js';
 
 // --- Deduplication helpers (exported for testing) ---
 
@@ -227,13 +228,13 @@ async function convergentSearchWorkflow(
     intersection: intersection.map(e => ({
       name: e.name,
       url: e.url,
-      item: e.item,
+      item: projectItem(e.item),
       foundInQueries: e.queryIndices.map(i => queries[i]),
       confidence: e.queryIndices.length / queries.length,
     })),
     unique: unique.map(e => ({
       query: queries[e.queryIndices[0]],
-      item: e.item,
+      item: projectItem(e.item),
     })),
     overlapMatrix,
     totalUniqueEntities: totalUnique,

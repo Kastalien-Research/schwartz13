@@ -12,6 +12,7 @@ import {
   validateEntity,
   withSummary,
 } from './helpers.js';
+import { projectItem } from '../lib/projections.js';
 
 // --- Template expansion ---
 
@@ -184,9 +185,15 @@ async function verifiedCollectionWorkflow(
   const duration = Date.now() - startTime;
   const succeededCount = researchResults.filter(r => r.research && r.research.researchId !== 'error').length;
 
+  // Project items at output boundary
+  const projectedResults = researchResults.map(r => ({
+    ...r,
+    item: r.item ? projectItem(r.item as Record<string, unknown>) : r.item,
+  }));
+
   return withSummary({
     websetId,
-    items: researchResults,
+    items: projectedResults,
     totalItems: allItems.length,
     researchedCount,
     duration,

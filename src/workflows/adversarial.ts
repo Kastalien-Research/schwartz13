@@ -10,6 +10,7 @@ import {
   validateRequired,
   withSummary,
 } from './helpers.js';
+import { filterAndProjectItems } from '../lib/projections.js';
 
 async function adversarialVerifyWorkflow(
   taskId: string,
@@ -158,16 +159,20 @@ Provide a balanced assessment including: verdict, confidence level, key supporti
   store.updateProgress(taskId, { step: 'complete', completed: totalSteps, total: totalSteps });
 
   const duration = Date.now() - startTime;
+  const projectedThesis = filterAndProjectItems(thesisItems);
+  const projectedAntithesis = filterAndProjectItems(antithesisItems);
   const result: Record<string, unknown> = {
     thesis: {
       websetId: thesisWebset.id,
-      items: thesisItems,
-      itemCount: thesisItems.length,
+      items: projectedThesis.data,
+      itemCount: projectedThesis.included,
+      itemsExcluded: projectedThesis.excluded,
     },
     antithesis: {
       websetId: antithesisWebset.id,
-      items: antithesisItems,
-      itemCount: antithesisItems.length,
+      items: projectedAntithesis.data,
+      itemCount: projectedAntithesis.included,
+      itemsExcluded: projectedAntithesis.excluded,
     },
     duration,
     steps: tracker.steps,
@@ -175,7 +180,7 @@ Provide a balanced assessment including: verdict, confidence level, key supporti
   if (synthesis) result.synthesis = synthesis;
 
   const synthLabel = synthesis ? ', synthesis completed' : '';
-  return withSummary(result, `Thesis: ${thesisItems.length} items, Antithesis: ${antithesisItems.length} items${synthLabel} in ${(duration / 1000).toFixed(0)}s`);
+  return withSummary(result, `Thesis: ${projectedThesis.included} items, Antithesis: ${projectedAntithesis.included} items${synthLabel} in ${(duration / 1000).toFixed(0)}s`);
 }
 
 registerWorkflow('adversarial.verify', adversarialVerifyWorkflow);

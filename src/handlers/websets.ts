@@ -1,5 +1,6 @@
 import type { Exa } from 'exa-js';
 import { OperationHandler, successResult, errorResult, requireParams } from './types.js';
+import { projectWebset } from '../lib/projections.js';
 
 export const create: OperationHandler = async (args, exa) => {
   try {
@@ -25,7 +26,7 @@ export const create: OperationHandler = async (args, exa) => {
     }
 
     const response = await exa.websets.create(params as any);
-    return successResult(response);
+    return successResult(projectWebset(response as unknown as Record<string, unknown>));
   } catch (error) {
     return errorResult('websets.create', error);
   }
@@ -38,7 +39,7 @@ export const get: OperationHandler = async (args, exa) => {
     const id = args.id as string;
     const expand = args.expand as string[] | undefined;
     const response = await exa.websets.get(id, expand as any);
-    return successResult(response);
+    return successResult(projectWebset(response as unknown as Record<string, unknown>));
   } catch (error) {
     return errorResult('websets.get', error);
   }
@@ -51,6 +52,11 @@ export const list: OperationHandler = async (args, exa) => {
     if (args.cursor) opts.cursor = args.cursor;
 
     const response = await exa.websets.list(opts as any);
+    const raw = response as unknown as Record<string, unknown>;
+    const data = raw.data as Record<string, unknown>[] | undefined;
+    if (data) {
+      return successResult({ ...raw, data: data.map(projectWebset) });
+    }
     return successResult(response);
   } catch (error) {
     return errorResult('websets.list', error);
@@ -65,7 +71,7 @@ export const update: OperationHandler = async (args, exa) => {
     const response = await exa.websets.update(id, {
       metadata: args.metadata as Record<string, string> | undefined,
     });
-    return successResult(response);
+    return successResult(projectWebset(response as unknown as Record<string, unknown>));
   } catch (error) {
     return errorResult('websets.update', error);
   }
@@ -89,7 +95,7 @@ export const cancel: OperationHandler = async (args, exa) => {
   try {
     const id = args.id as string;
     const response = await exa.websets.cancel(id);
-    return successResult(response);
+    return successResult(projectWebset(response as unknown as Record<string, unknown>));
   } catch (error) {
     return errorResult('websets.cancel', error);
   }
@@ -103,7 +109,7 @@ export const waitUntilIdle: OperationHandler = async (args, exa) => {
     const timeout = (args.timeout as number | undefined) ?? 300_000;
     const pollInterval = (args.pollInterval as number | undefined) ?? 1_000;
     const response = await exa.websets.waitUntilIdle(id, { timeout, pollInterval });
-    return successResult(response);
+    return successResult(projectWebset(response as unknown as Record<string, unknown>));
   } catch (error) {
     return errorResult('websets.waitUntilIdle', error);
   }
@@ -117,7 +123,8 @@ export const getAll: OperationHandler = async (args, exa) => {
       results.push(item);
       if (results.length >= maxItems) break;
     }
-    return successResult({ data: results, count: results.length, truncated: results.length >= maxItems });
+    const projected = results.map(r => projectWebset(r as Record<string, unknown>));
+    return successResult({ data: projected, count: projected.length, truncated: results.length >= maxItems });
   } catch (error) {
     return errorResult('websets.getAll', error);
   }

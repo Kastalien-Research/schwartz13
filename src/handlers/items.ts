@@ -1,5 +1,6 @@
 import type { Exa } from 'exa-js';
 import { OperationHandler, successResult, errorResult, requireParams } from './types.js';
+import { filterAndProjectItems } from '../lib/projections.js';
 
 export const list: OperationHandler = async (args, exa) => {
   const guard = requireParams('items.list', args, 'websetId');
@@ -9,6 +10,11 @@ export const list: OperationHandler = async (args, exa) => {
       limit: args.limit as number | undefined,
       cursor: args.cursor as string | undefined,
     });
+    const items = (response as any).data ?? response;
+    if (Array.isArray(items)) {
+      const projected = filterAndProjectItems(items);
+      return successResult({ ...projected, cursor: (response as any).cursor ?? null });
+    }
     return successResult(response);
   } catch (error) {
     return errorResult('items.list', error);
@@ -42,7 +48,8 @@ export const getAll: OperationHandler = async (args, exa) => {
       results.push(item);
       if (results.length >= maxItems) break;
     }
-    return successResult({ data: results, count: results.length, truncated: results.length >= maxItems });
+    const projected = filterAndProjectItems(results);
+    return successResult({ ...projected, truncated: results.length >= maxItems });
   } catch (error) {
     return errorResult('items.getAll', error);
   }

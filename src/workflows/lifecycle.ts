@@ -10,6 +10,7 @@ import {
   validateEntity,
   withSummary,
 } from './helpers.js';
+import { filterAndProjectItems } from '../lib/projections.js';
 
 async function lifecycleHarvestWorkflow(
   taskId: string,
@@ -99,10 +100,12 @@ async function lifecycleHarvestWorkflow(
   store.updateProgress(taskId, { step: 'complete', completed: 4, total: 4 });
 
   const duration = Date.now() - startTime;
+  const projected = filterAndProjectItems(items);
   const result: Record<string, unknown> = {
     websetId,
-    items,
-    itemCount: items.length,
+    items: projected.data,
+    itemCount: projected.included,
+    itemsExcluded: projected.excluded,
     searchProgress,
     enrichmentCount,
     duration,
@@ -110,7 +113,7 @@ async function lifecycleHarvestWorkflow(
   };
   if (timedOut) result.timedOut = true;
 
-  return withSummary(result, `Harvested ${items.length} items from webset ${websetId} (${enrichmentCount} enrichments) in ${(duration / 1000).toFixed(0)}s`);
+  return withSummary(result, `Harvested ${projected.included} items (${projected.excluded} excluded) from webset ${websetId} (${enrichmentCount} enrichments) in ${(duration / 1000).toFixed(0)}s`);
 }
 
 registerWorkflow('lifecycle.harvest', lifecycleHarvestWorkflow);
