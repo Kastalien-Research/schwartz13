@@ -69,8 +69,8 @@ export const getContents: OperationHandler = async (args, exa) => {
   try {
     const urls = args.urls as string | string[];
     const opts: Record<string, unknown> = {};
-    if (args.text) opts.text = args.text;
-    if (args.highlights) opts.highlights = args.highlights;
+    if (args.text !== undefined) opts.text = args.text;
+    if (args.highlights !== undefined) opts.highlights = args.highlights;
     if (args.summary) opts.summary = args.summary;
     if (args.livecrawl) opts.livecrawl = args.livecrawl;
     if (args.livecrawlTimeout) opts.livecrawlTimeout = args.livecrawlTimeout;
@@ -78,7 +78,7 @@ export const getContents: OperationHandler = async (args, exa) => {
     if (args.subpages) opts.subpages = args.subpages;
     if (args.subpageTarget) opts.subpageTarget = args.subpageTarget;
     if (args.extras) opts.extras = args.extras;
-    if (args.context) opts.context = args.context;
+    if (args.context !== undefined) opts.context = args.context;
     const hasOpts = Object.keys(opts).length > 0;
     const response = await exa.getContents(urls, hasOpts ? opts as any : undefined);
     return successResult(response);
