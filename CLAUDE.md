@@ -58,6 +58,22 @@ The server exposes a **single MCP tool** (`manage_websets`) that dispatches to 5
 
 Each handler exports named functions with signature `(args: Record<string, unknown>, exa: Exa) => Promise<ToolResult>`.
 
+### Workflows (src/workflows/)
+
+Long-running background tasks created via `tasks.create`. Each workflow registers itself in the workflow registry on import.
+
+| File | Type | Description |
+|------|------|-------------|
+| `helpers.ts` | — | Shared validators, polling, collection, WorkflowError, withSummary |
+| `types.ts` | — | Workflow registry (registerWorkflow/workflowRegistry) |
+| `echo.ts` | echo | Test workflow |
+| `lifecycle.ts` | lifecycle.harvest | Search + enrich + collect all items |
+| `convergent.ts` | convergent.search | N queries → deduplicate → intersection |
+| `adversarial.ts` | adversarial.verify | Thesis vs antithesis + optional synthesis |
+| `qdWinnow.ts` | qd.winnow | Quality-diversity: criteria × enrichments |
+| `researchDeep.ts` | research.deep | Exa Research API wrapper |
+| `verifiedCollection.ts` | research.verifiedCollection | Collection + per-entity deep research |
+
 ### Key Modules
 
 - `src/handlers/types.ts` — `ToolResult`, `OperationHandler` types, `successResult()` and `errorResult()` helpers
@@ -81,7 +97,7 @@ AI callers commonly get these wrong:
 
 ## Testing
 
-Tests use **Vitest** with config in `vitest.config.ts` (excludes `dist/` dir). Test files live in `src/handlers/__tests__/`. Tests mock the Exa client to verify handler logic, validation, and error formatting.
+Tests use **Vitest** with config in `vitest.config.ts` (excludes `dist/` dir). Test files live in `src/handlers/__tests__/` and `src/workflows/__tests__/`. ~340 tests across 37 files. Tests mock the Exa client to verify handler logic, validation, and error formatting.
 
 ## Environment
 

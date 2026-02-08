@@ -9,55 +9,115 @@ A Model Context Protocol (MCP) server that integrates [Exa's Websets API](https:
 Websets are collections of web entities (companies, people, research papers) that can be automatically discovered, verified, and enriched with custom data. Think of them as smart, self-updating spreadsheets powered by AI web research.
 
 **Key capabilities:**
-- 🔍 **Automated Search**: Find entities matching natural language criteria
-- 📊 **Data Enrichment**: Extract custom information using AI agents
-- 🔄 **Monitoring**: Schedule automatic updates to keep collections fresh
-- 🎯 **Verification**: AI validates that entities meet your criteria
-- 🔗 **Webhooks**: Real-time notifications for collection updates
+- **Automated Search**: Find entities matching natural language criteria
+- **Data Enrichment**: Extract custom information using AI agents
+- **Monitoring**: Schedule automatic updates to keep collections fresh
+- **Verification**: AI validates that entities meet your criteria
+- **Webhooks**: Real-time notifications for collection updates
+- **Workflows**: Long-running background tasks for multi-step research patterns
 
-## Available Tools
+## Unified Tool
 
-This MCP server provides the following tools:
+This server exposes a **single MCP tool** called `manage_websets` that dispatches to 56 operations across 10 domains. Every call follows the same pattern:
 
-### Webset Management
-| Tool | Description |
-| ---- | ----------- |
-| `create_webset` | Create a new webset collection with optional search and enrichments |
-| `list_websets` | List all your websets with pagination support |
-| `get_webset` | Get details about a specific webset |
-| `update_webset` | Update a webset's metadata |
-| `delete_webset` | Delete a webset and all its items |
+```json
+{
+  "operation": "websets.create",
+  "args": {
+    "searchQuery": "AI startups in San Francisco",
+    "searchCount": 20,
+    "entity": {"type": "company"}
+  }
+}
+```
 
-### Item Management
-| Tool | Description |
-| ---- | ----------- |
-| `list_webset_items` | List all items (entities) in a webset |
-| `get_item` | Get a specific item from a webset with all enrichment data |
+## Operations Reference
 
-### Search Operations
-| Tool | Description |
-| ---- | ----------- |
-| `create_search` | Create a new search to find and add items to a webset |
-| `get_search` | Get details about a specific search including status and progress |
-| `cancel_search` | Cancel a running search operation |
+| Domain | Operations | Count |
+|--------|-----------|-------|
+| **websets** | create, get, list, update, delete, cancel, preview, waitUntilIdle, getAll | 9 |
+| **searches** | create, get, cancel | 3 |
+| **items** | list, get, delete, getAll | 4 |
+| **enrichments** | create, get, cancel, update, delete | 5 |
+| **monitors** | create, get, list, update, delete, runs.list, runs.get, getAll | 8 |
+| **webhooks** | create, get, list, update, delete, list_attempts, getAll, getAllAttempts | 8 |
+| **imports** | create, get, list, update, delete, waitUntilCompleted, getAll | 7 |
+| **events** | list, get, getAll | 3 |
+| **tasks** | create, get, result, list, cancel | 5 |
+| **research** | create, get, list, pollUntilFinished | 4 |
 
-### Enrichment Operations
-| Tool | Description |
-| ---- | ----------- |
-| `create_enrichment` | Add a new data enrichment to extract custom information |
-| `get_enrichment` | Get details about a specific enrichment |
-| `cancel_enrichment` | Cancel a running enrichment operation |
+## Workflow Tasks
 
-### Monitoring
-| Tool | Description |
-| ---- | ----------- |
-| `create_monitor` | Set up automated monitoring to keep the webset updated |
+Long-running background tasks orchestrate multi-step research patterns. Create them with `tasks.create` and poll with `tasks.get` / `tasks.result`.
+
+| Type | Description | Key Args |
+|------|-------------|----------|
+| `lifecycle.harvest` | Search + enrich + collect (simplest end-to-end) | query, entity, enrichments?, count? |
+| `convergent.search` | N queries from different angles, deduplicate, find intersection | queries, entity, criteria?, count? |
+| `adversarial.verify` | Thesis vs antithesis websets + optional synthesis | thesis, thesisQuery, antithesisQuery, synthesize? |
+| `qd.winnow` | Quality-diversity: criteria as coordinates, enrichments as fitness | query, entity, criteria, enrichments, selectionStrategy? |
+| `research.deep` | Exa Research API question answering | instructions, model?, outputSchema? |
+| `research.verifiedCollection` | Entity collection + per-entity deep research | query, entity, researchPrompt, researchLimit? |
+
+### Workflow Examples
+
+**Search + enrich + collect in one step:**
+```json
+{
+  "operation": "tasks.create",
+  "args": {
+    "type": "lifecycle.harvest",
+    "args": {
+      "query": "AI startups in San Francisco",
+      "entity": {"type": "company"},
+      "enrichments": [
+        {"description": "CEO name", "format": "text"},
+        {"description": "Annual revenue in USD", "format": "number"}
+      ],
+      "count": 25
+    }
+  }
+}
+```
+
+**Multi-angle triangulation:**
+```json
+{
+  "operation": "tasks.create",
+  "args": {
+    "type": "convergent.search",
+    "args": {
+      "queries": [
+        "companies building autonomous vehicles",
+        "self-driving car startups with funding",
+        "autonomous driving technology firms"
+      ],
+      "entity": {"type": "company"}
+    }
+  }
+}
+```
+
+**Check task progress / get results:**
+```json
+{"operation": "tasks.get", "args": {"taskId": "task_abc123"}}
+{"operation": "tasks.result", "args": {"taskId": "task_abc123"}}
+```
+
+## Parameter Format Rules
+
+AI callers commonly get these wrong:
+
+| Parameter | Correct | Wrong |
+|-----------|---------|-------|
+| `criteria` | `[{"description": "..."}]` | `["criterion 1"]` |
+| `entity` | `{"type": "company"}` | `"company"` |
+| `options` | `[{"label": "..."}]` | `["option1"]` |
+| `cron` | `"0 9 * * 1"` (5-field) | `"0 0 9 * * 1"` (6-field) |
 
 ## Installation
 
 ### Installing via Smithery
-
-To install Exa Websets automatically via [Smithery](https://smithery.ai/server/@exa-labs/websets-mcp-server):
 
 ```bash
 npx -y @smithery/cli install @exa-labs/websets-mcp-server
@@ -65,43 +125,38 @@ npx -y @smithery/cli install @exa-labs/websets-mcp-server
 
 ### Prerequisites
 
-- [Node.js](https://nodejs.org/) v18 or higher
-- [Claude Desktop](https://claude.ai/download), [Cursor](https://cursor.sh/), or another MCP-compatible client
+- [Node.js](https://nodejs.org/) v20 or higher
 - An Exa API key from [exa.ai](https://exa.ai)
 
 ### Using Claude Code (Recommended)
-
-The quickest way to set up Websets MCP:
 
 ```bash
 claude mcp add websets -e EXA_API_KEY=YOUR_API_KEY -- npx -y websets-mcp-server
 ```
 
-Replace `YOUR_API_KEY` with your Exa API key.
-
 ### Using NPX
 
 ```bash
-# Install globally
-npm install -g websets-mcp-server
-
-# Or run directly with npx
-npx websets-mcp-server
+npx -y websets-mcp-server
 ```
+
+### Using Docker
+
+```bash
+EXA_API_KEY=your-key docker compose up --build
+```
+
+The server starts on port 7860 by default.
 
 ## Configuration
 
-### Claude Desktop Configuration
+### Claude Desktop
 
-1. **Enable Developer Mode**
-   - Open Claude Desktop
-   - Click the menu → Enable Developer Mode
-   - Go to Settings → Developer → Edit Config
+1. Open Claude Desktop → Enable Developer Mode → Settings → Developer → Edit Config
 
-2. **Add to configuration file:**
+2. Add to configuration file:
 
    **macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`
-   
    **Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
 
    ```json
@@ -109,10 +164,7 @@ npx websets-mcp-server
      "mcpServers": {
        "websets": {
          "command": "npx",
-         "args": [
-           "-y",
-           "websets-mcp-server"
-         ],
+         "args": ["-y", "websets-mcp-server"],
          "env": {
            "EXA_API_KEY": "your-api-key-here"
          }
@@ -121,233 +173,51 @@ npx websets-mcp-server
    }
    ```
 
-3. **Restart Claude Desktop**
-   - Completely quit Claude Desktop
-   - Start it again
-   - Look for the 🔌 icon to verify connection
+3. Restart Claude Desktop
 
-### Cursor and Claude Code Configuration
+### HTTP Server (Cursor, Claude Code, etc.)
 
-Use the HTTP-based configuration:
+The server runs as an HTTP endpoint using StreamableHTTP transport:
 
 ```json
 {
   "mcpServers": {
     "websets": {
       "type": "http",
-      "url": "https://mcp.exa.ai/websets",
-      "headers": {}
+      "url": "http://localhost:7860/mcp"
     }
   }
 }
 ```
-
-## Tool Schema Reference
-
-**⚠️ Important for AI Callers:** See [TOOL_SCHEMAS.md](./TOOL_SCHEMAS.md) for exact parameter formats and examples.
-
-**Key Schema Rules:**
-- `criteria` must be an array of objects: `[{description: "..."}]` (NOT an array of strings)
-- `entity` must be an object: `{type: "company"}` (NOT a string)
-- `options` must be an array of objects: `[{label: "..."}]` (NOT an array of strings)
-
-These formats ensure consistency across all tools and match the Websets API specification.
 
 ## Usage Examples
 
-Once configured, you can ask Claude to interact with Websets:
-
-### Creating a Webset
+### Simple Entity Search
 
 ```
-Create a webset of AI startups in San Francisco with 20 companies. 
+Create a webset of AI startups in San Francisco with 20 companies.
 Add enrichments for revenue, employee count, and funding stage.
 ```
 
-### Listing and Viewing Websets
+### End-to-End Workflow
 
 ```
-List all my websets and show me the details of the one called "AI Startups"
+Use lifecycle.harvest to find 25 AI companies in healthcare,
+enrich with CEO name and annual revenue, then show me the results.
 ```
 
-### Managing Items
+### Deep Research
 
 ```
-Show me the first 10 items from my "AI Startups" webset with all their enrichment data
+Use research.deep to answer: "What are the leading approaches
+to protein folding prediction as of 2025?"
 ```
 
-### Setting Up Monitoring
+### Adversarial Verification
 
 ```
-Create a monitor for my "AI Startups" webset that searches for new companies 
-every Monday at 9am using the cron schedule "0 9 * * 1"
-```
-
-### Advanced Enrichments
-
-```
-Add an enrichment to my webset that extracts the company's latest product launch 
-and the CEO's LinkedIn profile
-```
-
-## Example Workflow
-
-Here's a complete workflow for building a company research database:
-
-1. **Create the collection:**
-   ```
-   Create a webset called "SaaS Companies" that searches for 
-   "B2B SaaS companies with $10M+ revenue"
-   ```
-
-2. **Add enrichments:**
-   ```
-   Add enrichments to extract: annual recurring revenue, number of customers, 
-   primary market segment, and tech stack used
-   ```
-
-3. **Set up monitoring:**
-   ```
-   Create a weekly monitor that searches for new companies and refreshes 
-   enrichment data for existing ones
-   ```
-
-4. **View results:**
-   ```
-   Show me all items with their enrichment data, sorted by revenue
-   ```
-
-## Tool Details
-
-### create_webset
-
-Creates a new webset collection with optional automatic population and enrichments.
-
-**Parameters:**
-- `name` (optional): Name for the webset
-- `description` (optional): Description of what the webset contains
-- `externalId` (optional): Your own identifier (max 300 chars)
-- `searchQuery` (optional): Natural language query to find entities
-- `searchCount` (optional): Number of entities to find (default: 10, min: 1)
-- `searchCriteria` (optional): Additional filtering criteria
-- `enrichments` (optional): Array of enrichments to extract
-
-**Example:**
-```json
-{
-  "name": "Tech Unicorns",
-  "searchQuery": "Technology companies valued over $1 billion",
-  "searchCount": 50,
-  "searchCriteria": [
-    {"description": "Valued at over $1 billion"},
-    {"description": "Technology sector"}
-  ],
-  "enrichments": [
-    {
-      "description": "Current company valuation in USD",
-      "format": "number"
-    },
-    {
-      "description": "Names of company founders",
-      "format": "text"
-    },
-    {
-      "description": "Company stage",
-      "format": "options",
-      "options": [
-        {"label": "Series A"},
-        {"label": "Series B"},
-        {"label": "Series C+"},
-        {"label": "Public"}
-      ]
-    }
-  ]
-}
-```
-
-### create_enrichment
-
-Adds a new data enrichment to extract custom information from each webset item.
-
-**Parameters:**
-- `websetId`: The ID of the webset
-- `description`: Detailed description of what to extract
-
-**Example:**
-```json
-{
-  "websetId": "webset_abc123",
-  "description": "Total number of full-time employees as of the most recent data"
-}
-```
-
-### create_monitor
-
-Sets up automated monitoring with a cron schedule.
-
-**Parameters:**
-- `websetId`: The ID of the webset
-- `cron`: Cron expression (e.g., "0 9 * * 1" for Mondays at 9am)
-- `behavior`: Either "search" (find new items) or "refresh" (update existing)
-- `name` (optional): Name for the monitor
-- `enabled` (optional): Start enabled (default: true)
-
-**Common cron schedules:**
-- `0 9 * * 1` - Every Monday at 9am
-- `0 0 * * *` - Daily at midnight
-- `0 */6 * * *` - Every 6 hours
-- `0 9 * * 1-5` - Weekdays at 9am
-
-## API Endpoints
-
-The server connects to Exa's Websets API at `https://api.exa.ai/v0/websets`.
-
-Full API documentation: [docs.exa.ai/reference/websets](https://docs.exa.ai/reference/websets)
-
-## Advanced Configuration
-
-### Enable Specific Tools Only
-
-To enable only certain tools, use the `enabledTools` config:
-
-```json
-{
-  "mcpServers": {
-    "websets": {
-      "command": "npx",
-      "args": [
-        "-y",
-        "websets-mcp-server",
-        "--tools=create_webset,list_websets,list_webset_items"
-      ],
-      "env": {
-        "EXA_API_KEY": "your-api-key-here"
-      }
-    }
-  }
-}
-```
-
-### Debug Mode
-
-Enable debug logging to troubleshoot issues:
-
-```json
-{
-  "mcpServers": {
-    "websets": {
-      "command": "npx",
-      "args": [
-        "-y",
-        "websets-mcp-server",
-        "--debug"
-      ],
-      "env": {
-        "EXA_API_KEY": "your-api-key-here"
-      }
-    }
-  }
-}
+Use adversarial.verify to test the thesis "Remote work improves
+developer productivity" — search for supporting and counter-evidence.
 ```
 
 ## Troubleshooting
@@ -356,29 +226,21 @@ Enable debug logging to troubleshoot issues:
 
 1. Verify your API key is valid
 2. Ensure there are no spaces or quotes around the API key
-3. Completely restart your MCP client (not just close the window)
+3. Completely restart your MCP client
 4. Check the MCP logs for error messages
 
 ### API Rate Limits
 
-Websets API has the following limits:
 - Check your plan limits at [exa.ai/dashboard](https://exa.ai/dashboard)
-- Use pagination for large websets
+- Use pagination for large websets (items.getAll with maxItems)
 - Monitor API usage in your dashboard
 
 ### Common Errors
 
 - **401 Unauthorized**: Invalid or missing API key
 - **404 Not Found**: Webset ID doesn't exist or was deleted
-- **422 Unprocessable**: Invalid query or criteria format
+- **422 Unprocessable**: Invalid query or criteria format — check parameter format rules above
 - **429 Rate Limited**: Too many requests, wait and retry
-
-## Resources
-
-- [Exa Websets Documentation](https://docs.exa.ai/reference/websets)
-- [Exa Dashboard](https://exa.ai/dashboard)
-- [MCP Protocol Specification](https://modelcontextprotocol.io/)
-- [Get an Exa API Key](https://exa.ai)
 
 ## Development
 
@@ -389,6 +251,7 @@ git clone https://github.com/exa-labs/websets-mcp-server.git
 cd websets-mcp-server
 npm install
 npm run build
+npm start
 ```
 
 ### Project Structure
@@ -396,25 +259,60 @@ npm run build
 ```
 websets-mcp-server/
 ├── src/
-│   ├── index.ts              # Main server setup
-│   ├── types.ts              # TypeScript type definitions
-│   ├── tools/                # MCP tool implementations
-│   │   ├── config.ts         # API configuration
-│   │   ├── createWebset.ts
-│   │   ├── listWebsets.ts
-│   │   ├── getWebset.ts
-│   │   ├── updateWebset.ts
-│   │   ├── deleteWebset.ts
-│   │   ├── listItems.ts
-│   │   ├── createEnrichment.ts
-│   │   ├── createMonitor.ts
-│   │   └── ...
+│   ├── index.ts                 # Express server + MCP transport
+│   ├── server.ts                # Server factory (createServer)
+│   ├── tools/
+│   │   └── manageWebsets.ts     # Unified dispatcher (56 operations)
+│   ├── handlers/                # Domain handlers
+│   │   ├── types.ts             # ToolResult, OperationHandler types
+│   │   ├── websets.ts           # Webset CRUD + convenience ops
+│   │   ├── searches.ts          # Search operations
+│   │   ├── items.ts             # Item operations
+│   │   ├── enrichments.ts       # Enrichment operations
+│   │   ├── monitors.ts          # Monitor + runs operations
+│   │   ├── webhooks.ts          # Webhook operations
+│   │   ├── imports.ts           # Import operations
+│   │   ├── events.ts            # Event operations
+│   │   ├── tasks.ts             # Background task orchestrator
+│   │   └── research.ts          # Exa Research API
+│   ├── workflows/               # Long-running task workflows
+│   │   ├── types.ts             # Workflow registry
+│   │   ├── helpers.ts           # Shared utilities + validators
+│   │   ├── echo.ts              # Test workflow
+│   │   ├── qdWinnow.ts          # Quality-diversity search
+│   │   ├── lifecycle.ts         # Search + enrich + collect
+│   │   ├── convergent.ts        # Multi-query triangulation
+│   │   ├── adversarial.ts       # Thesis vs antithesis
+│   │   ├── researchDeep.ts      # Research API wrapper
+│   │   └── verifiedCollection.ts # Collection + per-entity research
+│   ├── lib/
+│   │   ├── exa.ts               # Exa client singleton
+│   │   ├── taskStore.ts         # In-memory task state store
+│   │   └── semaphore.ts         # Concurrency limiter
 │   └── utils/
-│       ├── api.ts            # Shared API client and error handling
-│       └── logger.ts         # Logging utilities
+│       └── logger.ts            # Debug logging
 ├── package.json
-└── tsconfig.json
+├── tsconfig.json
+├── Dockerfile
+└── docker-compose.yml
 ```
+
+### Test Scripts
+
+```bash
+npm test                 # Full suite
+npm run test:unit        # Unit tests only
+npm run test:integration # Integration tests (requires EXA_API_KEY)
+npm run test:e2e         # End-to-end tests
+npm run test:workflows   # Workflow tests only
+```
+
+## Resources
+
+- [Exa Websets Documentation](https://docs.exa.ai/reference/websets)
+- [Exa Dashboard](https://exa.ai/dashboard)
+- [MCP Protocol Specification](https://modelcontextprotocol.io/)
+- [Get an Exa API Key](https://exa.ai)
 
 ## License
 

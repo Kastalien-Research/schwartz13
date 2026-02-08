@@ -1,425 +1,307 @@
-# Websets MCP Tool Schemas Reference
+# Websets MCP Tool Schema Reference
 
-This document provides the exact schemas for all MCP tools. Use these examples to ensure you're calling the tools with the correct parameter formats.
+This server exposes a **single MCP tool** called `manage_websets`. Every call passes an `operation` name and an `args` object.
 
-## Object Parameter Formats
-
-**IMPORTANT**: The following parameters must be passed as **objects**, not strings:
-
-### Criteria Format
 ```json
 {
-  "criteria": [
-    {"description": "criterion 1"},
-    {"description": "criterion 2"}
-  ]
+  "operation": "<domain>.<action>",
+  "args": { ... }
 }
 ```
 
-### Entity Format
+## Parameter Format Rules
+
+**These are the top agent footguns — get them right:**
+
+| Parameter | Correct | Wrong |
+|-----------|---------|-------|
+| `criteria` | `[{"description": "..."}]` | `["criterion 1"]` |
+| `entity` | `{"type": "company"}` | `"company"` |
+| `options` | `[{"label": "..."}]` | `["option1"]` |
+| `cron` | `"0 9 * * 1"` (5 fields) | `"0 0 9 * * 1"` (6 fields) |
+
+---
+
+## Core CRUD Operations
+
+### websets.create — Create a webset with search + enrichments
+
 ```json
 {
-  "entity": {
-    "type": "company"  // or "person", "article", "research_paper", "custom"
+  "operation": "websets.create",
+  "args": {
+    "searchQuery": "AI startups in San Francisco",
+    "searchCount": 20,
+    "entity": {"type": "company"},
+    "searchCriteria": [
+      {"description": "Founded after 2020"},
+      {"description": "Has more than 10 employees"}
+    ],
+    "enrichments": [
+      {"description": "CEO name", "format": "text"},
+      {
+        "description": "Company stage",
+        "format": "options",
+        "options": [
+          {"label": "Seed"},
+          {"label": "Series A"},
+          {"label": "Series B+"},
+          {"label": "Public"}
+        ]
+      },
+      {"description": "Annual revenue in USD", "format": "number"}
+    ]
   }
 }
 ```
 
-### Enrichment Options Format
+### items.list — List items in a webset
+
 ```json
 {
-  "options": [
-    {"label": "option 1"},
-    {"label": "option 2"}
-  ]
+  "operation": "items.list",
+  "args": {
+    "websetId": "ws_abc123",
+    "limit": 50
+  }
+}
+```
+
+### enrichments.create — Add an enrichment to a webset
+
+```json
+{
+  "operation": "enrichments.create",
+  "args": {
+    "websetId": "ws_abc123",
+    "description": "Primary contact email address",
+    "format": "email"
+  }
+}
+```
+
+### monitors.create — Schedule automatic updates
+
+```json
+{
+  "operation": "monitors.create",
+  "args": {
+    "websetId": "ws_abc123",
+    "cron": "0 9 * * 1",
+    "timezone": "America/New_York",
+    "query": "New AI startups in 2025",
+    "entity": {"type": "company"},
+    "count": 10,
+    "behavior": "append"
+  }
 }
 ```
 
 ---
 
-## Tool: create_webset
+## Convenience Operations
 
-Create a new Webset collection with optional search and enrichments.
+### websets.waitUntilIdle — Poll until webset finishes processing
 
-### Example Call
 ```json
 {
-  "name": "AI Startups in SF",
-  "description": "Collection of artificial intelligence startups based in San Francisco",
-  "externalId": "my-ai-startups-2024",
-  "searchQuery": "AI startups in San Francisco",
-  "searchCount": 20,
-  "searchCriteria": [
-    {"description": "Founded after 2020"},
-    {"description": "Has more than 10 employees"}
-  ],
-  "enrichments": [
-    {
-      "description": "CEO name",
-      "format": "text"
-    },
-    {
-      "description": "Company size category",
-      "format": "options",
-      "options": [
-        {"label": "Small (1-50)"},
-        {"label": "Medium (51-200)"},
-        {"label": "Large (201+)"}
-      ]
-    },
-    {
-      "description": "Annual revenue in USD",
-      "format": "number"
+  "operation": "websets.waitUntilIdle",
+  "args": {
+    "id": "ws_abc123",
+    "timeout": 300000
+  }
+}
+```
+
+### items.getAll — Auto-paginate all items
+
+```json
+{
+  "operation": "items.getAll",
+  "args": {
+    "websetId": "ws_abc123",
+    "maxItems": 500
+  }
+}
+```
+
+---
+
+## Research Operations
+
+### research.create — Start a research request
+
+```json
+{
+  "operation": "research.create",
+  "args": {
+    "instructions": "What are the leading approaches to protein folding prediction?",
+    "model": "exa-research"
+  }
+}
+```
+
+Models: `"exa-research-fast"`, `"exa-research"`, `"exa-research-pro"`
+
+### research.pollUntilFinished — Wait for research to complete
+
+```json
+{
+  "operation": "research.pollUntilFinished",
+  "args": {
+    "researchId": "res_abc123",
+    "timeoutMs": 300000
+  }
+}
+```
+
+---
+
+## Workflow Tasks
+
+Background tasks orchestrate multi-step research patterns. Create with `tasks.create`, poll with `tasks.get`, get results with `tasks.result`.
+
+### lifecycle.harvest — Search + enrich + collect
+
+```json
+{
+  "operation": "tasks.create",
+  "args": {
+    "type": "lifecycle.harvest",
+    "args": {
+      "query": "AI startups in San Francisco",
+      "entity": {"type": "company"},
+      "enrichments": [
+        {"description": "CEO name", "format": "text"},
+        {"description": "Annual revenue in USD", "format": "number"}
+      ],
+      "count": 25,
+      "cleanup": false
     }
-  ]
-}
-```
-
----
-
-## Tool: create_search
-
-Create a new search to find and add items to an existing webset.
-
-### Example Call
-```json
-{
-  "websetId": "webset_abc123",
-  "query": "Y Combinator alumni in fintech",
-  "count": 15,
-  "entity": {
-    "type": "company"
-  },
-  "criteria": [
-    {"description": "Participated in Y Combinator"},
-    {"description": "Operating in financial technology sector"},
-    {"description": "Currently active"}
-  ],
-  "behavior": "append",
-  "recall": true,
-  "metadata": {
-    "source": "yc_fintech_2024",
-    "batch": "q1"
   }
 }
 ```
 
-### Valid Entity Types
-- `"company"`
-- `"person"`
-- `"article"`
-- `"research_paper"`
-- `"custom"`
+### convergent.search — Multi-angle triangulation
 
-### Valid Behaviors
-- `"override"` - Replaces existing items (default)
-- `"append"` - Adds to existing items
-
----
-
-## Tool: create_enrichment
-
-Create an enrichment to extract custom data from webset items.
-
-### Example Call (Text Format)
 ```json
 {
-  "websetId": "webset_abc123",
-  "description": "Primary contact email address",
-  "format": "email",
-  "metadata": {
-    "purpose": "outreach",
-    "verified": "false"
+  "operation": "tasks.create",
+  "args": {
+    "type": "convergent.search",
+    "args": {
+      "queries": [
+        "companies building autonomous vehicles",
+        "self-driving car startups with funding",
+        "autonomous driving technology firms"
+      ],
+      "entity": {"type": "company"},
+      "count": 25
+    }
   }
 }
 ```
 
-### Example Call (Options Format)
+### adversarial.verify — Thesis vs antithesis
+
 ```json
 {
-  "websetId": "webset_abc123",
-  "description": "Company stage",
-  "format": "options",
-  "options": [
-    {"label": "Pre-seed"},
-    {"label": "Seed"},
-    {"label": "Series A"},
-    {"label": "Series B"},
-    {"label": "Series C+"},
-    {"label": "Public"}
-  ]
-}
-```
-
-### Valid Formats
-- `"text"` - Free-form text
-- `"date"` - Date values
-- `"number"` - Numeric values
-- `"options"` - Choose from predefined options (requires `options` parameter)
-- `"email"` - Email addresses
-- `"phone"` - Phone numbers
-- `"url"` - URLs
-
----
-
-## Tool: create_monitor
-
-Create a monitor to automatically update a webset on a schedule.
-
-### Example Call
-```json
-{
-  "websetId": "webset_abc123",
-  "cron": "0 9 * * 1",
-  "timezone": "America/New_York",
-  "query": "New AI startups founded in 2024",
-  "criteria": [
-    {"description": "Founded in 2024"},
-    {"description": "Building AI/ML products"},
-    {"description": "Has public website"}
-  ],
-  "entity": {
-    "type": "company"
-  },
-  "count": 10,
-  "behavior": "append"
-}
-```
-
-### Cron Expression Examples
-- `"0 9 * * 1"` - Every Monday at 9:00 AM
-- `"0 */6 * * *"` - Every 6 hours
-- `"0 0 1 * *"` - First day of every month at midnight
-- `"0 0 * * 0"` - Every Sunday at midnight
-
-### Valid Behaviors
-- `"append"` - Add new items to existing ones (default)
-- `"override"` - Replace existing items with new ones
-
----
-
-## Tool: list_websets
-
-List all websets with pagination.
-
-### Example Call
-```json
-{
-  "limit": 50,
-  "cursor": "cursor_xyz789"
-}
-```
-
-### Default Values
-- `limit`: 25 (max: 100)
-- `cursor`: null (for first page)
-
----
-
-## Tool: get_webset
-
-Get details about a specific webset.
-
-### Example Call
-```json
-{
-  "id": "webset_abc123",
-  "expandItems": true
-}
-```
-
-You can use either the webset ID or your externalId:
-```json
-{
-  "id": "my-ai-startups-2024",
-  "expandItems": false
-}
-```
-
----
-
-## Tool: update_webset
-
-Update a webset's metadata.
-
-### Example Call
-```json
-{
-  "id": "webset_abc123",
-  "metadata": {
-    "last_reviewed": "2024-10-16",
-    "owner": "sales_team",
-    "status": "active"
+  "operation": "tasks.create",
+  "args": {
+    "type": "adversarial.verify",
+    "args": {
+      "thesis": "Remote work improves developer productivity",
+      "thesisQuery": "studies showing remote work boosts developer output",
+      "antithesisQuery": "studies showing remote work hurts developer productivity",
+      "entity": {"type": "article"},
+      "synthesize": true
+    }
   }
 }
 ```
 
----
+### qd.winnow — Quality-diversity analysis
 
-## Tool: list_items
-
-List all items in a webset.
-
-### Example Call
 ```json
 {
-  "websetId": "webset_abc123",
-  "limit": 100,
-  "cursor": "cursor_xyz789"
-}
-```
-
----
-
-## Tool: get_item
-
-Get a specific item from a webset.
-
-### Example Call
-```json
-{
-  "websetId": "webset_abc123",
-  "itemId": "item_def456"
-}
-```
-
----
-
-## Tool: get_search
-
-Get details about a search operation.
-
-### Example Call
-```json
-{
-  "websetId": "webset_abc123",
-  "searchId": "search_ghi789"
-}
-```
-
----
-
-## Tool: cancel_search
-
-Cancel a running search operation.
-
-### Example Call
-```json
-{
-  "websetId": "webset_abc123",
-  "searchId": "search_ghi789"
-}
-```
-
----
-
-## Tool: get_enrichment
-
-Get details about an enrichment.
-
-### Example Call
-```json
-{
-  "websetId": "webset_abc123",
-  "enrichmentId": "enrichment_jkl012"
-}
-```
-
----
-
-## Tool: cancel_enrichment
-
-Cancel a running enrichment operation.
-
-### Example Call
-```json
-{
-  "websetId": "webset_abc123",
-  "enrichmentId": "enrichment_jkl012"
-}
-```
-
----
-
-## Tool: delete_webset
-
-Delete a webset permanently.
-
-### Example Call
-```json
-{
-  "id": "webset_abc123"
-}
-```
-
----
-
-## Common Mistakes to Avoid
-
-### ❌ Wrong: Passing strings for criteria
-```json
-{
-  "criteria": ["criterion 1", "criterion 2"]
-}
-```
-
-### ✅ Correct: Passing objects for criteria
-```json
-{
-  "criteria": [
-    {"description": "criterion 1"},
-    {"description": "criterion 2"}
-  ]
-}
-```
-
----
-
-### ❌ Wrong: Passing string for entity
-```json
-{
-  "entity": "company"
-}
-```
-
-### ✅ Correct: Passing object for entity
-```json
-{
-  "entity": {
-    "type": "company"
+  "operation": "tasks.create",
+  "args": {
+    "type": "qd.winnow",
+    "args": {
+      "query": "AI safety research labs",
+      "entity": {"type": "company"},
+      "criteria": [
+        {"description": "Publishes peer-reviewed papers"},
+        {"description": "Has government funding"},
+        {"description": "Founded before 2020"}
+      ],
+      "enrichments": [
+        {"description": "Number of published papers", "format": "number"},
+        {"description": "Primary research focus", "format": "text"}
+      ],
+      "selectionStrategy": "diverse"
+    }
   }
 }
 ```
 
----
+### research.deep — Deep research question
 
-### ❌ Wrong: Passing strings for options
 ```json
 {
-  "options": ["option1", "option2"]
+  "operation": "tasks.create",
+  "args": {
+    "type": "research.deep",
+    "args": {
+      "instructions": "What are the top AI safety labs and their key contributions?",
+      "model": "exa-research"
+    }
+  }
 }
 ```
 
-### ✅ Correct: Passing objects for options
+### research.verifiedCollection — Collection + per-entity research
+
 ```json
 {
-  "options": [
-    {"label": "option1"},
-    {"label": "option2"}
-  ]
+  "operation": "tasks.create",
+  "args": {
+    "type": "research.verifiedCollection",
+    "args": {
+      "query": "AI safety research labs",
+      "entity": {"type": "company"},
+      "researchPrompt": "Research {{name}} and describe their main contributions to AI safety",
+      "researchLimit": 10
+    }
+  }
 }
+```
+
+### Checking task status
+
+```json
+{"operation": "tasks.get", "args": {"taskId": "task_abc123"}}
+{"operation": "tasks.result", "args": {"taskId": "task_abc123"}}
+{"operation": "tasks.list", "args": {"status": "running"}}
+{"operation": "tasks.cancel", "args": {"taskId": "task_abc123"}}
 ```
 
 ---
 
-## Schema Consistency
+## Valid Entity Types
 
-All tools follow these consistent patterns:
+- `"company"` — Business entities
+- `"person"` — Individual people
+- `"article"` — News articles, blog posts
+- `"research_paper"` — Academic papers
+- `"custom"` — Custom entity type
 
-1. **Criteria**: Always `[{description: string}]`
-2. **Entity**: Always `{type: string}`
-3. **Options**: Always `[{label: string}]`
-4. **Metadata**: Always `Record<string, string>` (object with string keys and values)
+## Valid Enrichment Formats
 
-This consistency ensures predictable usage across all Websets MCP tools.
-
+- `"text"` — Free-form text
+- `"number"` — Numeric values
+- `"date"` — Date values
+- `"options"` — Choose from predefined options (requires `options` array)
+- `"email"` — Email addresses
+- `"phone"` — Phone numbers
+- `"url"` — URLs

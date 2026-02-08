@@ -6,6 +6,9 @@ import {
   isCancelled,
   pollUntilIdle,
   collectItems,
+  validateQueries,
+  validateEntity,
+  withSummary,
 } from './helpers.js';
 
 // --- Deduplication helpers (exported for testing) ---
@@ -115,17 +118,14 @@ async function convergentSearchWorkflow(
   const startTime = Date.now();
   const tracker = createStepTracker();
 
-  const queries = args.queries as string[] | undefined;
-  const entity = args.entity as { type: string } | undefined;
   const criteria = args.criteria as Array<{ description: string }> | undefined;
   const count = (args.count as number) ?? 25;
   const timeoutMs = (args.timeout as number) ?? 300_000;
 
   // Validate
   const step0 = Date.now();
-  if (!queries || !Array.isArray(queries)) throw new Error('queries is required and must be an array');
-  if (queries.length < 2 || queries.length > 5) throw new Error('queries must have 2-5 entries');
-  if (!entity) throw new Error('entity is required');
+  const queries = validateQueries(args.queries);
+  const entity = validateEntity(args.entity);
   tracker.track('validate', step0);
 
   if (isCancelled(taskId, store)) return null;
@@ -217,7 +217,11 @@ async function convergentSearchWorkflow(
 
   store.updateProgress(taskId, { step: 'complete', completed: totalSteps, total: totalSteps });
 
-  return {
+  const duration = Date.now() - startTime;
+  const totalUnique = intersection.length + unique.length;
+  const overlapPct = totalUnique > 0 ? Math.round((intersection.length / totalUnique) * 100) : 0;
+
+  return withSummary({
     websetIds,
     queries,
     intersection: intersection.map(e => ({
@@ -232,10 +236,10 @@ async function convergentSearchWorkflow(
       item: e.item,
     })),
     overlapMatrix,
-    totalUniqueEntities: intersection.length + unique.length,
-    duration: Date.now() - startTime,
+    totalUniqueEntities: totalUnique,
+    duration,
     steps: tracker.steps,
-  };
+  }, `${queries.length} queries → ${totalUnique} unique entities, ${intersection.length} in intersection (${overlapPct}% overlap) in ${(duration / 1000).toFixed(0)}s`);
 }
 
 registerWorkflow('convergent.search', convergentSearchWorkflow);

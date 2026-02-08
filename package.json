@@ -1,6 +1,6 @@
 {
   "name": "websets-mcp-server",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "description": "A Model Context Protocol server for Exa Websets API. Create, manage, and enrich collections of web entities (companies, people, papers) with automated search, enrichments, and monitoring capabilities.",
   "mcpName": "io.github.exa-labs/websets-mcp-server",
   "type": "module",
@@ -36,6 +36,7 @@
     "test:unit": "vitest run src/handlers/__tests__/{registry,enrichments,monitors,types}.test.ts",
     "test:integration": "vitest run src/handlers/__tests__/integration/",
     "test:e2e": "vitest run src/__tests__/e2e/",
+    "test:workflows": "vitest run src/workflows/__tests__/",
     "docker:up": "docker compose up --build",
     "docker:down": "docker compose down"
   },

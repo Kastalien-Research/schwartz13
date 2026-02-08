@@ -6,6 +6,9 @@ import {
   isCancelled,
   pollUntilIdle,
   collectItems,
+  validateRequired,
+  validateEntity,
+  withSummary,
 } from './helpers.js';
 
 async function lifecycleHarvestWorkflow(
@@ -17,8 +20,6 @@ async function lifecycleHarvestWorkflow(
   const startTime = Date.now();
   const tracker = createStepTracker();
 
-  const query = args.query as string | undefined;
-  const entity = args.entity as { type: string } | undefined;
   const criteria = args.criteria as Array<{ description: string }> | undefined;
   const count = (args.count as number) ?? 25;
   const enrichments = args.enrichments as Array<Record<string, unknown>> | undefined;
@@ -27,8 +28,9 @@ async function lifecycleHarvestWorkflow(
 
   // Validate
   const step0 = Date.now();
-  if (!query) throw new Error('query is required');
-  if (!entity) throw new Error('entity is required');
+  validateRequired(args, 'query', 'Natural language search query, e.g. "AI startups in San Francisco"');
+  const entity = validateEntity(args.entity);
+  const query = args.query as string;
   tracker.track('validate', step0);
 
   if (isCancelled(taskId, store)) return null;
@@ -96,18 +98,19 @@ async function lifecycleHarvestWorkflow(
 
   store.updateProgress(taskId, { step: 'complete', completed: 4, total: 4 });
 
+  const duration = Date.now() - startTime;
   const result: Record<string, unknown> = {
     websetId,
     items,
     itemCount: items.length,
     searchProgress,
     enrichmentCount,
-    duration: Date.now() - startTime,
+    duration,
     steps: tracker.steps,
   };
   if (timedOut) result.timedOut = true;
 
-  return result;
+  return withSummary(result, `Harvested ${items.length} items from webset ${websetId} (${enrichmentCount} enrichments) in ${(duration / 1000).toFixed(0)}s`);
 }
 
 registerWorkflow('lifecycle.harvest', lifecycleHarvestWorkflow);

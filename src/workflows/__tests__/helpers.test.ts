@@ -6,6 +6,11 @@ import {
   summarizeItem,
   pollUntilIdle,
   collectItems,
+  validateRequired,
+  validateEntity,
+  validateQueries,
+  withSummary,
+  WorkflowError,
 } from '../helpers.js';
 import { TaskStore } from '../../lib/taskStore.js';
 
@@ -194,6 +199,113 @@ describe('workflow helpers', () => {
 
       const items = await collectItems(mockExa, 'ws1', 5);
       expect(items).toHaveLength(5);
+    });
+  });
+
+  describe('validateRequired', () => {
+    it('passes when field is present', () => {
+      expect(() => validateRequired({ name: 'test' }, 'name')).not.toThrow();
+    });
+
+    it('throws when field is missing', () => {
+      expect(() => validateRequired({}, 'name')).toThrow('name is required');
+    });
+
+    it('throws when field is null', () => {
+      expect(() => validateRequired({ name: null }, 'name')).toThrow('name is required');
+    });
+
+    it('includes hint in error message', () => {
+      expect(() => validateRequired({}, 'query', 'e.g. "AI startups"')).toThrow(
+        'query is required. e.g. "AI startups"',
+      );
+    });
+
+    it('throws WorkflowError with step=validate', () => {
+      try {
+        validateRequired({}, 'x');
+        expect.unreachable('should throw');
+      } catch (err) {
+        expect(err).toBeInstanceOf(WorkflowError);
+        expect((err as WorkflowError).step).toBe('validate');
+      }
+    });
+  });
+
+  describe('validateEntity', () => {
+    it('returns valid entity object', () => {
+      const result = validateEntity({ type: 'company' });
+      expect(result).toEqual({ type: 'company' });
+    });
+
+    it('throws for string entity', () => {
+      expect(() => validateEntity('company')).toThrow('entity must be an object');
+    });
+
+    it('throws for null', () => {
+      expect(() => validateEntity(null)).toThrow('entity must be an object');
+    });
+
+    it('throws for object missing type', () => {
+      expect(() => validateEntity({ name: 'test' })).toThrow('entity must be an object');
+    });
+  });
+
+  describe('validateQueries', () => {
+    it('returns valid queries array', () => {
+      const result = validateQueries(['q1', 'q2']);
+      expect(result).toEqual(['q1', 'q2']);
+    });
+
+    it('throws for non-array', () => {
+      expect(() => validateQueries('query')).toThrow('must be an array');
+    });
+
+    it('throws for null', () => {
+      expect(() => validateQueries(null)).toThrow('must be an array');
+    });
+
+    it('throws for too few entries', () => {
+      expect(() => validateQueries(['q1'])).toThrow('must have 2-5 entries (got 1)');
+    });
+
+    it('throws for too many entries', () => {
+      expect(() => validateQueries(['a', 'b', 'c', 'd', 'e', 'f'])).toThrow('must have 2-5 entries (got 6)');
+    });
+  });
+
+  describe('withSummary', () => {
+    it('adds _summary field', () => {
+      const result = withSummary({ count: 5 }, 'Found 5 items');
+      expect(result._summary).toBe('Found 5 items');
+      expect(result.count).toBe(5);
+    });
+
+    it('preserves existing fields', () => {
+      const result = withSummary({ a: 1, b: 'hello' }, 'summary');
+      expect(result.a).toBe(1);
+      expect(result.b).toBe('hello');
+      expect(result._summary).toBe('summary');
+    });
+  });
+
+  describe('WorkflowError', () => {
+    it('carries step and recoverable fields', () => {
+      const err = new WorkflowError('bad input', 'validate', false);
+      expect(err.message).toBe('bad input');
+      expect(err.step).toBe('validate');
+      expect(err.recoverable).toBe(false);
+      expect(err).toBeInstanceOf(Error);
+    });
+
+    it('defaults recoverable to false', () => {
+      const err = new WorkflowError('timeout', 'polling');
+      expect(err.recoverable).toBe(false);
+    });
+
+    it('supports recoverable=true', () => {
+      const err = new WorkflowError('rate limit', 'polling', true);
+      expect(err.recoverable).toBe(true);
     });
   });
 });

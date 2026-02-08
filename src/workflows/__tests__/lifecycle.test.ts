@@ -58,7 +58,7 @@ describe('lifecycle.harvest workflow', () => {
   it('validates entity is required', async () => {
     const task = store.create('lifecycle.harvest', { query: 'test' });
     await expect(workflow(task.id, task.args, {} as any, store)).rejects.toThrow(
-      'entity is required',
+      'entity must be an object',
     );
     store.dispose();
   });

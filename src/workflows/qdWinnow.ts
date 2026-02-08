@@ -8,6 +8,7 @@ import {
   sleep,
   summarizeItem,
   collectItems,
+  withSummary,
 } from './helpers.js';
 
 // --- Types ---
@@ -420,6 +421,7 @@ Assess:
     trackStep('critique', step8Start);
   }
 
+  const duration = Date.now() - startTime;
   const result: Record<string, unknown> = {
     websetId,
     itemCount: items.length,
@@ -427,7 +429,7 @@ Assess:
     elites,
     qualityMetrics,
     descriptorFeedback,
-    duration: Date.now() - startTime,
+    duration,
     steps,
   };
   if (timedOut) {
@@ -437,7 +439,7 @@ Assess:
     result.critique = critique;
   }
 
-  return result;
+  return withSummary(result, `${items.length} items → ${populatedNiches}/${possibleNiches} niches populated, ${elites.length} elites selected (${strategy}), coverage=${qualityMetrics.coverage.toFixed(2)} in ${(duration / 1000).toFixed(0)}s`);
 }
 
 // Register

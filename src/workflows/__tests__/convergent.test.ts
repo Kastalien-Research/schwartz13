@@ -132,7 +132,7 @@ describe('convergent.search workflow', () => {
       queries: ['q1', 'q2'],
     });
     await expect(workflow(task.id, task.args, {} as any, store)).rejects.toThrow(
-      'entity is required',
+      'entity must be an object',
     );
     store.dispose();
   });

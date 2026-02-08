@@ -7,6 +7,8 @@ import {
   pollUntilIdle,
   collectItems,
   summarizeItem,
+  validateRequired,
+  withSummary,
 } from './helpers.js';
 
 async function adversarialVerifyWorkflow(
@@ -18,9 +20,6 @@ async function adversarialVerifyWorkflow(
   const startTime = Date.now();
   const tracker = createStepTracker();
 
-  const thesis = args.thesis as string | undefined;
-  const thesisQuery = args.thesisQuery as string | undefined;
-  const antithesisQuery = args.antithesisQuery as string | undefined;
   const entity = args.entity as { type: string } | undefined;
   const count = (args.count as number) ?? 25;
   const enrichments = args.enrichments as Array<Record<string, unknown>> | undefined;
@@ -29,9 +28,12 @@ async function adversarialVerifyWorkflow(
 
   // Validate
   const step0 = Date.now();
-  if (!thesis) throw new Error('thesis is required');
-  if (!thesisQuery) throw new Error('thesisQuery is required');
-  if (!antithesisQuery) throw new Error('antithesisQuery is required');
+  validateRequired(args, 'thesis', 'The hypothesis to test, e.g. "Remote work improves developer productivity"');
+  validateRequired(args, 'thesisQuery', 'Search query for supporting evidence');
+  validateRequired(args, 'antithesisQuery', 'Search query for counter-evidence');
+  const thesis = args.thesis as string;
+  const thesisQuery = args.thesisQuery as string;
+  const antithesisQuery = args.antithesisQuery as string;
   tracker.track('validate', step0);
 
   if (isCancelled(taskId, store)) return null;
@@ -155,6 +157,7 @@ Provide a balanced assessment including: verdict, confidence level, key supporti
   const totalSteps = synthesize ? 7 : 5;
   store.updateProgress(taskId, { step: 'complete', completed: totalSteps, total: totalSteps });
 
+  const duration = Date.now() - startTime;
   const result: Record<string, unknown> = {
     thesis: {
       websetId: thesisWebset.id,
@@ -166,12 +169,13 @@ Provide a balanced assessment including: verdict, confidence level, key supporti
       items: antithesisItems,
       itemCount: antithesisItems.length,
     },
-    duration: Date.now() - startTime,
+    duration,
     steps: tracker.steps,
   };
   if (synthesis) result.synthesis = synthesis;
 
-  return result;
+  const synthLabel = synthesis ? ', synthesis completed' : '';
+  return withSummary(result, `Thesis: ${thesisItems.length} items, Antithesis: ${antithesisItems.length} items${synthLabel} in ${(duration / 1000).toFixed(0)}s`);
 }
 
 registerWorkflow('adversarial.verify', adversarialVerifyWorkflow);

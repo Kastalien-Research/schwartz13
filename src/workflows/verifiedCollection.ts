@@ -8,6 +8,9 @@ import {
   pollUntilIdle,
   collectItems,
   summarizeItem,
+  validateRequired,
+  validateEntity,
+  withSummary,
 } from './helpers.js';
 
 // --- Template expansion ---
@@ -42,12 +45,9 @@ async function verifiedCollectionWorkflow(
   const startTime = Date.now();
   const tracker = createStepTracker();
 
-  const query = args.query as string | undefined;
-  const entity = args.entity as { type: string } | undefined;
   const criteria = args.criteria as Array<{ description: string }> | undefined;
   const count = (args.count as number) ?? 25;
   const enrichments = args.enrichments as Array<Record<string, unknown>> | undefined;
-  const researchPrompt = args.researchPrompt as string | undefined;
   const researchSchema = args.researchSchema as object | undefined;
   const researchModel = (args.researchModel as string) ?? 'exa-research';
   const researchLimit = (args.researchLimit as number) ?? 10;
@@ -55,9 +55,11 @@ async function verifiedCollectionWorkflow(
 
   // Validate
   const step0 = Date.now();
-  if (!query) throw new Error('query is required');
-  if (!entity) throw new Error('entity is required');
-  if (!researchPrompt) throw new Error('researchPrompt is required');
+  validateRequired(args, 'query', 'Natural language search query, e.g. "AI startups in San Francisco"');
+  const entity = validateEntity(args.entity);
+  validateRequired(args, 'researchPrompt', 'Template for per-entity research, e.g. "Research {{name}} and describe their main product"');
+  const query = args.query as string;
+  const researchPrompt = args.researchPrompt as string;
   tracker.track('validate', step0);
 
   if (isCancelled(taskId, store)) return null;
@@ -179,14 +181,17 @@ async function verifiedCollectionWorkflow(
     r => r.research && r.research.researchId !== 'error',
   ).length;
 
-  return {
+  const duration = Date.now() - startTime;
+  const succeededCount = researchResults.filter(r => r.research && r.research.researchId !== 'error').length;
+
+  return withSummary({
     websetId,
     items: researchResults,
     totalItems: allItems.length,
     researchedCount,
-    duration: Date.now() - startTime,
+    duration,
     steps: tracker.steps,
-  };
+  }, `${allItems.length} items collected, ${selectedItems.length} researched (${succeededCount} succeeded) in ${(duration / 1000).toFixed(0)}s`);
 }
 
 registerWorkflow('research.verifiedCollection', verifiedCollectionWorkflow);
