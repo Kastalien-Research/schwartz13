@@ -1,5 +1,5 @@
 services:
-  websets-mcp:
+  schwartz13:
     build: .
     ports:
       - "${PORT:-7860}:7860"

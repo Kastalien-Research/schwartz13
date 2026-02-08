@@ -2,7 +2,7 @@
   "name": "schwartz13",
   "version": "1.0.0",
   "description": "A Model Context Protocol server for Exa Websets API. Create, manage, and enrich collections of web entities (companies, people, papers) with automated search, enrichments, and monitoring capabilities.",
-  "mcpName": "io.github.exa-labs/websets-mcp-server",
+  "mcpName": "io.github.kastalien-research/schwartz13",
   "type": "module",
   "module": "./src/index.ts",
   "repository": {
