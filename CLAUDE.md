@@ -22,7 +22,7 @@ npx vitest run src/handlers/__tests__/enrichments.test.ts  # Run a single test f
 
 ### Unified Dispatcher (v2.0.0)
 
-The server exposes a **single MCP tool** (`manage_websets`) that dispatches to 47 operations across 8 domains. This follows the Thoughtbox hub tool pattern.
+The server exposes a **single MCP tool** (`manage_websets`) that dispatches to 56 operations across 10 domains. This follows the Thoughtbox hub tool pattern.
 
 ### Entry Point
 
@@ -32,7 +32,7 @@ The server exposes a **single MCP tool** (`manage_websets`) that dispatches to 4
 
 ```typescript
 {
-  operation: z.enum([...47 operation names]),  // e.g. "websets.create", "searches.get"
+  operation: z.enum([...56 operation names]),  // e.g. "websets.create", "searches.get"
   args: z.record(z.string(), z.unknown()).optional()  // operation-specific args
 }
 ```
@@ -53,6 +53,8 @@ The server exposes a **single MCP tool** (`manage_websets`) that dispatches to 4
 | `webhooks.ts` | create, get, list, update, delete, listAttempts, getAll, getAllAttempts | 8 |
 | `imports.ts` | create, get, list, update, delete, waitUntilCompleted, getAll | 7 |
 | `events.ts` | list, get, getAll | 3 |
+| `tasks.ts` | create, get, result, list, cancel | 5 |
+| `research.ts` | create, get, list, pollUntilFinished | 4 |
 
 Each handler exports named functions with signature `(args: Record<string, unknown>, exa: Exa) => Promise<ToolResult>`.
 

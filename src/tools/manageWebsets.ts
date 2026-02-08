@@ -12,6 +12,11 @@ import * as monitors from '../handlers/monitors.js';
 import * as webhooks from '../handlers/webhooks.js';
 import * as imports from '../handlers/imports.js';
 import * as events from '../handlers/events.js';
+import * as tasks from '../handlers/tasks.js';
+import * as research from '../handlers/research.js';
+
+// Side-effect import: registers echo workflow in the registry
+import '../workflows/echo.js';
 
 // Operation metadata: name, handler, summary for description
 interface OperationMeta {
@@ -82,6 +87,19 @@ const OPERATIONS: Record<string, OperationMeta> = {
   'events.list': { handler: events.list, summary: 'List events (args: limit?, cursor?, types?)' },
   'events.get': { handler: events.get, summary: 'Get an event (args: id)' },
   'events.getAll': { handler: events.getAll, summary: 'Auto-paginate all events (args: maxItems?, types?). Default maxItems=1000' },
+
+  // Tasks domain (background task orchestrator)
+  'tasks.create': { handler: tasks.create, summary: 'Create a background task (args: type, args?). Types: echo, qd.winnow, lifecycle.harvest, convergent.search, adversarial.verify, research.deep, research.verifiedCollection' },
+  'tasks.get': { handler: tasks.get, summary: 'Get task status and progress (args: taskId)' },
+  'tasks.result': { handler: tasks.result, summary: 'Get task result when completed (args: taskId)' },
+  'tasks.list': { handler: tasks.list, summary: 'List tasks, optionally filtered by status (args: status?)' },
+  'tasks.cancel': { handler: tasks.cancel, summary: 'Cancel a running task (args: taskId)' },
+
+  // Research domain (Exa Research API)
+  'research.create': { handler: research.create, summary: 'Create a research request (args: instructions, model?, outputSchema?)' },
+  'research.get': { handler: research.get, summary: 'Get research status (args: researchId, events?)' },
+  'research.list': { handler: research.list, summary: 'List research requests (args: cursor?, limit?)' },
+  'research.pollUntilFinished': { handler: research.pollUntilFinished, summary: 'Poll until research completes (args: researchId, pollInterval?, timeoutMs?, events?)' },
 };
 
 const OPERATION_NAMES = Object.keys(OPERATIONS) as [string, ...string[]];

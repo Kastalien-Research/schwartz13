@@ -12,6 +12,8 @@ import * as monitors from '../monitors.js';
 import * as webhooks from '../webhooks.js';
 import * as imports from '../imports.js';
 import * as events from '../events.js';
+import * as tasks from '../tasks.js';
+import * as research from '../research.js';
 
 describe('Handler modules export expected operations', () => {
   it('websets exports 9 handlers', () => {
@@ -85,7 +87,22 @@ describe('Handler modules export expected operations', () => {
     expect(typeof events.getAll).toBe('function');
   });
 
-  it('total handler count is 47', () => {
+  it('tasks exports 5 handlers', () => {
+    expect(typeof tasks.create).toBe('function');
+    expect(typeof tasks.get).toBe('function');
+    expect(typeof tasks.result).toBe('function');
+    expect(typeof tasks.list).toBe('function');
+    expect(typeof tasks.cancel).toBe('function');
+  });
+
+  it('research exports 4 handlers', () => {
+    expect(typeof research.create).toBe('function');
+    expect(typeof research.get).toBe('function');
+    expect(typeof research.list).toBe('function');
+    expect(typeof research.pollUntilFinished).toBe('function');
+  });
+
+  it('total handler count is 56', () => {
     const handlerCount =
       Object.keys(websets).length +    // 9
       Object.keys(searches).length +   // 3
@@ -94,7 +111,9 @@ describe('Handler modules export expected operations', () => {
       Object.keys(monitors).length +   // 8
       Object.keys(webhooks).length +   // 8
       Object.keys(imports).length +    // 7
-      Object.keys(events).length;      // 3
-    expect(handlerCount).toBe(47);
+      Object.keys(events).length +     // 3
+      Object.keys(tasks).length +      // 5
+      Object.keys(research).length;    // 4
+    expect(handlerCount).toBe(56);
   });
 });
