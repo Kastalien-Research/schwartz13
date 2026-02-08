@@ -813,7 +813,102 @@ Agent: manage_websets({
 
 ---
 
-## 9. Open Questions
+## 9. Clune QD/Open-Endedness Integration
+
+Analysis of Jeff Clune's quality-diversity and open-endedness corpus (MAP-Elites, POET, Go-Explore, AI-GAs, novelty search) reveals 5 design refinements and 2 future directions.
+
+### 9.1 What Changes (v1 refinements)
+
+**A. Webset = Archive (MAP-Elites core pattern)**
+
+The webset itself IS the persistent archive. It lives in Exa's cloud, items accumulate across searches, enrichments add quality dimensions. Design implication: patterns should **build on** existing websets via `searches.create` with `behavior='append'`, not always create new ones.
+
+All task types that create websets gain an optional `seedWebsetId` parameter:
+```typescript
+{
+  type: 'lifecycle.harvest',
+  seedWebsetId?: string,  // append to existing webset instead of creating new
+  // ... other args
+}
+```
+When provided, the task adds a new search to the existing webset rather than creating a fresh one. The existing items persist — this is archive memory.
+
+**B. Descriptor Feedback (learned diversity metrics)**
+
+The Exa API already provides descriptor quality signals via `successRate` on each criterion. `qd.winnow` should report these and flag descriptor quality:
+```typescript
+descriptorFeedback: Array<{
+  criterion: string,
+  successRate: number,
+  quality: 'too-strict' | 'good-discriminator' | 'not-discriminating',
+  // too-strict: < 5%, good: 5-95%, not-discriminating: > 95%
+}>
+```
+This is descriptor learning via API feedback — the system tells you which behavioral coordinates are actually useful.
+
+**C. Critique as Composable Phase**
+
+All task types gain an optional `critique: boolean` flag. When true, after the main workflow completes, the server calls the Research API to evaluate results:
+```
+instructions: "Given the research query '{query}' and these {N} results, assess:
+1. Coverage: are important entities/aspects missing?
+2. Quality: are results genuinely relevant?
+3. Gaps: what blind spots exist?
+4. Surprises: anything unexpected that deserves deeper investigation?"
+```
+Adds a `critique` field to task result with the Research API's structured assessment.
+
+**D. Stepping-Stone Transfer (agent-mediated, v1)**
+
+Task results include `websetId`. The agent can inspect prior task results and pass information to subsequent tasks. For v1 this is agent-mediated (the agent reads task A's result and uses it to construct task B's args). The server doesn't need special transfer logic yet.
+
+Example stepping-stone flow:
+```
+Task A: lifecycle.harvest → finds 50 AI safety companies
+Agent: reads results, identifies 3 underexplored niches
+Task B: lifecycle.harvest(seedWebsetId: taskA.websetId, criteria: [refined based on niches])
+→ Appends to same archive, filling gaps
+```
+
+**E. Local Competition via Niches (already in qd.winnow)**
+
+The criteria-combination-as-niche approach already implements local competition — fitness is compared within niches, not globally. Confirmed as aligned with Clune patterns.
+
+### 9.2 Future Directions (v2+)
+
+**POET-R: Co-evolving research questions and solutions**
+
+The iterative.refine pattern is a simplified version of POET. The full POET-R pattern would:
+1. Generate research questions from results (requires LLM-in-the-loop in server)
+2. Create new websets for generated questions
+3. Transfer promising items between websets
+4. Maintain a growing archive of question-answer pairs
+
+This requires server-side LLM calls and is out of scope for v1, but the architecture supports it — add a new task type that calls the Research API to generate questions, then dispatches lifecycle.harvest tasks internally.
+
+**Automated Descriptor Evolution**
+
+Currently criteria are user-provided. Future: analyze criteria success rates across multiple rounds and automatically evolve better descriptors. Low-successRate criteria get loosened. Non-discriminating criteria get tightened. New criteria get proposed based on item properties that correlate with enrichment fitness scores.
+
+### 9.3 Mapping: Clune Patterns → Our Task Types
+
+| Clune Pattern | Our Implementation | Status |
+|--------------|-------------------|--------|
+| MAP-Elites archive | Webset = persistent archive; qd.winnow = MAP-Elites loop | v1 |
+| Behavioral descriptors | Criteria satisfaction vectors | v1 |
+| Fitness function | Enrichment result scores | v1 |
+| Descriptor learning | successRate feedback in qd.winnow | v1 |
+| Local competition | Per-niche fitness comparison | v1 |
+| Stepping-stone transfer | Agent-mediated via websetId passing | v1 |
+| Novelty/deception awareness | adversarial.verify pattern | v1 |
+| Automated critique | Optional Research API critique phase | v1 |
+| Go-Explore archive-first | seedWebsetId + append behavior | v1 |
+| POET co-evolution | iterative.refine (simplified); POET-R (v2) | v1/v2 |
+| AI-GAs meta-level | Out of scope (agent-level concern) | — |
+
+---
+
+## 10. Open Questions
 
 1. **Task result size**: Should large results (1000+ items) be stored in the task result or referenced via websetId? Storing full items in memory could be expensive.
 
@@ -824,3 +919,7 @@ Agent: manage_websets({
 4. **Convergent search deduplication**: Fuzzy entity matching is hard. Should we start with URL-only matching (simpler, may miss duplicates) or invest in name similarity (more complex, better results)?
 
 5. **Task concurrency limit**: Default 20 concurrent tasks seems reasonable. Should this be configurable via environment variable?
+
+6. **Archive persistence across server restarts**: Websets persist in Exa's cloud (good), but the TaskStore doesn't survive restart. Should completed task metadata be persisted to enable cross-session archive awareness?
+
+7. **Critique cost**: Research API calls cost ~$0.13-0.24 each. Should critique be opt-in (default false) or opt-out (default true)?
