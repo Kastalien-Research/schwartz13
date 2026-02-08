@@ -15,8 +15,9 @@ import * as events from '../handlers/events.js';
 import * as tasks from '../handlers/tasks.js';
 import * as research from '../handlers/research.js';
 
-// Side-effect import: registers echo workflow in the registry
+// Side-effect imports: register workflows in the registry
 import '../workflows/echo.js';
+import '../workflows/qdWinnow.js';
 
 // Operation metadata: name, handler, summary for description
 interface OperationMeta {
