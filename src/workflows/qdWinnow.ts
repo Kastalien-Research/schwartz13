@@ -1,6 +1,14 @@
 import type { Exa } from 'exa-js';
 import type { TaskStore } from '../lib/taskStore.js';
 import { registerWorkflow } from './types.js';
+import {
+  type StepTiming,
+  createStepTracker,
+  isCancelled,
+  sleep,
+  summarizeItem,
+  collectItems,
+} from './helpers.js';
 
 // --- Types ---
 
@@ -25,11 +33,6 @@ export interface ClassifiedItem {
   niche: string;
   criteriaVector: boolean[];
   fitnessScore: number;
-}
-
-interface StepTiming {
-  name: string;
-  durationMs: number;
 }
 
 // --- Helpers (exported for testing) ---
@@ -119,26 +122,8 @@ export function selectElites(
   }
 }
 
-export function summarizeItem(item: Record<string, unknown>): string {
-  const props = item.properties as Record<string, unknown> | undefined;
-  if (!props) return 'unknown';
-  const company = props.company as Record<string, unknown> | undefined;
-  const person = props.person as Record<string, unknown> | undefined;
-  const article = props.article as Record<string, unknown> | undefined;
-  const name = (
-    company?.name ?? person?.name ?? article?.title ?? props.description ?? 'unknown'
-  ) as string;
-  const url = (props.url ?? '') as string;
-  return url ? `${name} (${url})` : name;
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-function isCancelled(taskId: string, store: TaskStore): boolean {
-  return store.get(taskId)?.status === 'cancelled';
-}
+// Re-export summarizeItem for backward compatibility with existing tests
+export { summarizeItem } from './helpers.js';
 
 // --- Main Workflow ---
 
@@ -149,11 +134,9 @@ async function qdWinnowWorkflow(
   store: TaskStore,
 ): Promise<unknown> {
   const startTime = Date.now();
-  const steps: StepTiming[] = [];
-
-  function trackStep(name: string, startMs: number) {
-    steps.push({ name, durationMs: Date.now() - startMs });
-  }
+  const tracker = createStepTracker();
+  const { steps } = tracker;
+  const trackStep = tracker.track.bind(tracker);
 
   // Parse args
   const a: QdWinnowArgs = {
@@ -293,11 +276,7 @@ async function qdWinnowWorkflow(
   const step3Start = Date.now();
   store.updateProgress(taskId, { step: 'collecting', completed: 3, total: 7 });
 
-  const items: Record<string, unknown>[] = [];
-  for await (const item of (exa.websets.items as any).listAll(websetId)) {
-    items.push(item as Record<string, unknown>);
-    if (items.length >= 1000) break;
-  }
+  const items = await collectItems(exa, websetId);
   trackStep('collect', step3Start);
 
   // Set partial result checkpoint

@@ -18,6 +18,11 @@ import * as research from '../handlers/research.js';
 // Side-effect imports: register workflows in the registry
 import '../workflows/echo.js';
 import '../workflows/qdWinnow.js';
+import '../workflows/researchDeep.js';
+import '../workflows/lifecycle.js';
+import '../workflows/adversarial.js';
+import '../workflows/convergent.js';
+import '../workflows/verifiedCollection.js';
 
 // Operation metadata: name, handler, summary for description
 interface OperationMeta {

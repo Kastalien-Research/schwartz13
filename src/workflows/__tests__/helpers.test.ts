@@ -1,0 +1,199 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import {
+  createStepTracker,
+  isCancelled,
+  sleep,
+  summarizeItem,
+  pollUntilIdle,
+  collectItems,
+} from '../helpers.js';
+import { TaskStore } from '../../lib/taskStore.js';
+
+describe('workflow helpers', () => {
+  describe('createStepTracker', () => {
+    it('tracks step timings', () => {
+      const tracker = createStepTracker();
+      const start = Date.now();
+      tracker.track('test-step', start - 100);
+      expect(tracker.steps).toHaveLength(1);
+      expect(tracker.steps[0].name).toBe('test-step');
+      expect(tracker.steps[0].durationMs).toBeGreaterThanOrEqual(100);
+    });
+
+    it('accumulates multiple steps', () => {
+      const tracker = createStepTracker();
+      tracker.track('a', Date.now());
+      tracker.track('b', Date.now());
+      expect(tracker.steps).toHaveLength(2);
+    });
+  });
+
+  describe('isCancelled', () => {
+    it('returns true for cancelled task', () => {
+      const store = new TaskStore();
+      const task = store.create('test', {});
+      store.cancel(task.id);
+      expect(isCancelled(task.id, store)).toBe(true);
+      store.dispose();
+    });
+
+    it('returns false for working task', () => {
+      const store = new TaskStore();
+      const task = store.create('test', {});
+      store.updateProgress(task.id, { step: 'x', completed: 0, total: 1 });
+      expect(isCancelled(task.id, store)).toBe(false);
+      store.dispose();
+    });
+
+    it('returns false for nonexistent task', () => {
+      const store = new TaskStore();
+      expect(isCancelled('nonexistent', store)).toBe(false);
+      store.dispose();
+    });
+  });
+
+  describe('sleep', () => {
+    it('resolves after delay', async () => {
+      const start = Date.now();
+      await sleep(50);
+      expect(Date.now() - start).toBeGreaterThanOrEqual(40);
+    });
+  });
+
+  describe('summarizeItem', () => {
+    it('extracts company name and url', () => {
+      const item = {
+        properties: { company: { name: 'Acme' }, url: 'https://acme.com' },
+      };
+      expect(summarizeItem(item)).toBe('Acme (https://acme.com)');
+    });
+
+    it('extracts person name', () => {
+      const item = {
+        properties: { person: { name: 'Jane' }, url: 'https://j.com' },
+      };
+      expect(summarizeItem(item)).toBe('Jane (https://j.com)');
+    });
+
+    it('extracts article title', () => {
+      const item = {
+        properties: { article: { title: 'My Article' } },
+      };
+      expect(summarizeItem(item)).toBe('My Article');
+    });
+
+    it('falls back to description', () => {
+      const item = { properties: { description: 'A thing' } };
+      expect(summarizeItem(item)).toBe('A thing');
+    });
+
+    it('returns unknown for no properties', () => {
+      expect(summarizeItem({})).toBe('unknown');
+    });
+  });
+
+  describe('pollUntilIdle', () => {
+    it('returns immediately when webset is idle', async () => {
+      const store = new TaskStore();
+      const task = store.create('test', {});
+      const mockExa = {
+        websets: {
+          get: vi.fn().mockResolvedValue({ id: 'ws1', status: 'idle', searches: [] }),
+          cancel: vi.fn(),
+        },
+      } as any;
+
+      const result = await pollUntilIdle({
+        exa: mockExa,
+        websetId: 'ws1',
+        taskId: task.id,
+        store,
+        timeoutMs: 5000,
+        stepNum: 1,
+        totalSteps: 3,
+      });
+
+      expect(result.timedOut).toBe(false);
+      expect(result.webset.status).toBe('idle');
+      store.dispose();
+    });
+
+    it('returns timedOut when deadline exceeded', async () => {
+      const store = new TaskStore();
+      const task = store.create('test', {});
+      const mockExa = {
+        websets: {
+          get: vi.fn().mockResolvedValue({ id: 'ws1', status: 'running', searches: [] }),
+          cancel: vi.fn(),
+        },
+      } as any;
+
+      const result = await pollUntilIdle({
+        exa: mockExa,
+        websetId: 'ws1',
+        taskId: task.id,
+        store,
+        timeoutMs: 0, // immediate timeout
+        stepNum: 1,
+        totalSteps: 3,
+      });
+
+      expect(result.timedOut).toBe(true);
+      store.dispose();
+    });
+
+    it('throws on paused webset', async () => {
+      const store = new TaskStore();
+      const task = store.create('test', {});
+      const mockExa = {
+        websets: {
+          get: vi.fn().mockResolvedValue({ id: 'ws1', status: 'paused', searches: [] }),
+          cancel: vi.fn(),
+        },
+      } as any;
+
+      await expect(
+        pollUntilIdle({
+          exa: mockExa,
+          websetId: 'ws1',
+          taskId: task.id,
+          store,
+          timeoutMs: 5000,
+          stepNum: 1,
+          totalSteps: 3,
+        }),
+      ).rejects.toThrow('paused unexpectedly');
+      store.dispose();
+    });
+  });
+
+  describe('collectItems', () => {
+    it('collects items from async generator', async () => {
+      async function* gen() {
+        yield { id: '1' };
+        yield { id: '2' };
+        yield { id: '3' };
+      }
+
+      const mockExa = {
+        websets: { items: { listAll: vi.fn().mockReturnValue(gen()) } },
+      } as any;
+
+      const items = await collectItems(mockExa, 'ws1');
+      expect(items).toHaveLength(3);
+    });
+
+    it('respects cap', async () => {
+      async function* gen() {
+        for (let i = 0; i < 100; i++) yield { id: String(i) };
+      }
+
+      const mockExa = {
+        websets: { items: { listAll: vi.fn().mockReturnValue(gen()) } },
+      } as any;
+
+      const items = await collectItems(mockExa, 'ws1', 5);
+      expect(items).toHaveLength(5);
+    });
+  });
+});
