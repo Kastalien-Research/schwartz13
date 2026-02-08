@@ -1,6 +1,57 @@
 import type { Exa } from 'exa-js';
 import type { TaskStore } from '../lib/taskStore.js';
 
+// --- Validators ---
+
+export function validateRequired(args: Record<string, unknown>, field: string, hint?: string): void {
+  if (args[field] === undefined || args[field] === null) {
+    const msg = hint
+      ? `${field} is required. ${hint}`
+      : `${field} is required`;
+    throw new WorkflowError(msg, 'validate');
+  }
+}
+
+export function validateEntity(entity: unknown): { type: string } {
+  if (!entity || typeof entity !== 'object' || !('type' in (entity as Record<string, unknown>))) {
+    throw new WorkflowError(
+      'entity must be an object: {type: "company"|"person"|"article"|...}',
+      'validate',
+    );
+  }
+  return entity as { type: string };
+}
+
+export function validateQueries(queries: unknown): string[] {
+  if (!queries || !Array.isArray(queries)) {
+    throw new WorkflowError(
+      'queries is required and must be an array of 2-5 search strings',
+      'validate',
+    );
+  }
+  if (queries.length < 2 || queries.length > 5) {
+    throw new WorkflowError(
+      `queries must have 2-5 entries (got ${queries.length}). Each query approaches the topic from a different angle for triangulation.`,
+      'validate',
+    );
+  }
+  return queries as string[];
+}
+
+// --- Errors ---
+
+export class WorkflowError extends Error {
+  constructor(message: string, public step: string, public recoverable = false) {
+    super(message);
+  }
+}
+
+// --- Result formatting ---
+
+export function withSummary(result: Record<string, unknown>, summary: string): Record<string, unknown> {
+  return { _summary: summary, ...result };
+}
+
 // --- Types ---
 
 export interface StepTiming {

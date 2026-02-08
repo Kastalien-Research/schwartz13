@@ -95,7 +95,17 @@ const OPERATIONS: Record<string, OperationMeta> = {
   'events.getAll': { handler: events.getAll, summary: 'Auto-paginate all events (args: maxItems?, types?). Default maxItems=1000' },
 
   // Tasks domain (background task orchestrator)
-  'tasks.create': { handler: tasks.create, summary: 'Create a background task (args: type, args?). Types: echo, qd.winnow, lifecycle.harvest, convergent.search, adversarial.verify, research.deep, research.verifiedCollection' },
+  'tasks.create': {
+    handler: tasks.create,
+    summary: 'Create a background task (args: type, args?). Types:\n' +
+      '  echo — test workflow (args: message, delayMs?)\n' +
+      '  qd.winnow — quality-diversity search: criteria as behavioral coordinates + enrichments as fitness (args: query, entity, criteria, enrichments, count?, selectionStrategy?, critique?)\n' +
+      '  lifecycle.harvest — create webset, search, enrich, collect all items (args: query, entity, enrichments?, count?, cleanup?)\n' +
+      '  convergent.search — N queries from different angles, deduplicate, find intersection (args: queries, entity, criteria?, count?)\n' +
+      '  adversarial.verify — thesis vs antithesis websets + optional synthesis (args: thesis, thesisQuery, antithesisQuery, entity?, synthesize?)\n' +
+      '  research.deep — Exa Research API wrapper (args: instructions, model?, outputSchema?)\n' +
+      '  research.verifiedCollection — webset collection + per-entity deep research (args: query, entity, researchPrompt, researchLimit?, researchSchema?)',
+  },
   'tasks.get': { handler: tasks.get, summary: 'Get task status and progress (args: taskId)' },
   'tasks.result': { handler: tasks.result, summary: 'Get task result when completed (args: taskId)' },
   'tasks.list': { handler: tasks.list, summary: 'List tasks, optionally filtered by status (args: status?)' },
@@ -125,6 +135,21 @@ function buildToolDescription(): string {
   return `Manage Exa Websets — unified tool for all websets operations.
 
 Choose an operation and pass its arguments in the args object.
+
+QUICK START:
+- Simple entity search: websets.create → websets.waitUntilIdle → items.getAll
+- Search + enrich + collect in one task: tasks.create type=lifecycle.harvest
+- Multi-angle triangulation: tasks.create type=convergent.search
+- Quality-diversity analysis: tasks.create type=qd.winnow
+- Deep research question: tasks.create type=research.deep
+
+WORKFLOW GUIDE (long-running background tasks via tasks.create):
+  lifecycle.harvest — search + enrich + collect (simplest end-to-end)
+  convergent.search — N queries → deduplicate → intersection (high-confidence discovery)
+  adversarial.verify — thesis vs antithesis + optional synthesis (bias testing)
+  qd.winnow — criteria × enrichments quality-diversity analysis (advanced)
+  research.deep — Exa Research API question answering
+  research.verifiedCollection — entity collection + per-entity deep research
 
 PARAMETER FORMAT RULES:
 - criteria: MUST be [{description: "..."}] (array of objects, NOT strings)

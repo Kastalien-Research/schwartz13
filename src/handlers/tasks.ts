@@ -2,6 +2,7 @@ import type { OperationHandler } from './types.js';
 import { successResult, errorResult, requireParams } from './types.js';
 import { taskStore } from '../lib/taskStore.js';
 import { workflowRegistry } from '../workflows/types.js';
+import { WorkflowError } from '../workflows/helpers.js';
 
 export const create: OperationHandler = async (args, exa) => {
   const guard = requireParams('tasks.create', args, 'type');
@@ -21,9 +22,9 @@ export const create: OperationHandler = async (args, exa) => {
     void workflow(task.id, taskArgs, exa, taskStore)
       .then(result => taskStore.setResult(task.id, result))
       .catch(err => taskStore.setError(task.id, {
-        step: 'unknown',
+        step: err instanceof WorkflowError ? err.step : 'unknown',
         message: err instanceof Error ? err.message : String(err),
-        recoverable: false,
+        recoverable: err instanceof WorkflowError ? err.recoverable : false,
       }));
 
     return successResult({ taskId: task.id, status: 'pending' });
