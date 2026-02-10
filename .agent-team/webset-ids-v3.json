@@ -1,0 +1,114 @@
+{
+  "created": "2026-02-10",
+  "round": "v3",
+  "note": "Entity type adaptations: github_repo/tweet/linkedin_profile not valid for Websets API. github_repo → omitted (auto-detected as company/custom), tweet → omitted (auto-detected as x_post), linkedin_profile → person. API also rejects 'description' param — rationale stored in metadata.",
+  "websets": [
+    {
+      "nqId": "NQ1",
+      "label": "MCP Reasoning & Planning Repos",
+      "websetId": "webset_01kh340cw4w4v9amnqc6x044ec",
+      "entityType": "company",
+      "priority": "high",
+      "status": "idle",
+      "itemsFound": 50,
+      "enrichments": 3
+    },
+    {
+      "nqId": "NQ2",
+      "label": "Agent Orchestration Tool Companies",
+      "websetId": "webset_01kh340tampe0xzdfffa9559wq",
+      "entityType": "company",
+      "priority": "high",
+      "status": "idle",
+      "itemsFound": 49,
+      "enrichments": 3
+    },
+    {
+      "nqId": "NQ3",
+      "label": "Agent Opacity Pain Tweets",
+      "websetId": "webset_01kh3418d2dp5da6venh3exyh0",
+      "entityType": "x_post",
+      "priority": "high",
+      "status": "idle",
+      "itemsFound": 26,
+      "enrichments": 3
+    },
+    {
+      "nqId": "NQ4",
+      "label": "Agent Observability & Tracing Repos",
+      "websetId": "webset_01kh344ex8b020tfjgwpddx6va",
+      "entityType": "company",
+      "priority": "high",
+      "status": "idle",
+      "itemsFound": 50,
+      "enrichments": 3
+    },
+    {
+      "nqId": "NQ5",
+      "label": "OSS Maintainers Using AI Agent Workflows",
+      "websetId": "webset_01kh34q2gsttn0fxbm6w0f8wcr",
+      "entityType": "person",
+      "priority": "medium",
+      "status": "idle",
+      "itemsFound": 10,
+      "enrichments": 3
+    },
+    {
+      "nqId": "NQ6",
+      "label": "Agent Orchestration Educators",
+      "websetId": "webset_01kh355ajffmsztexms2gpqdhp",
+      "entityType": "person",
+      "priority": "medium",
+      "status": "running",
+      "itemsFound": 54,
+      "enrichments": 3
+    },
+    {
+      "nqId": "NQ7",
+      "label": "Agent Orchestration Engineers",
+      "websetId": "webset_01kh34n6kd993ph75et1m7nrpf",
+      "entityType": "person",
+      "priority": "high",
+      "status": "idle",
+      "itemsFound": 78,
+      "enrichments": 3
+    },
+    {
+      "nqId": "NQ8",
+      "label": "Agent Debugging Blog Authors",
+      "websetId": "webset_01kh34nq539m31mn3q5b1qd8fj",
+      "entityType": "person",
+      "priority": "high",
+      "status": "idle",
+      "itemsFound": 41,
+      "enrichments": 3
+    },
+    {
+      "nqId": "NQ9",
+      "label": "Claude Multi-Agent Workflow Tweets",
+      "websetId": "webset_01kh355s33bf12zqpecrbhb489",
+      "entityType": "x_post",
+      "priority": "medium",
+      "status": "running",
+      "itemsFound": 33,
+      "enrichments": 3
+    },
+    {
+      "nqId": "NQ10",
+      "label": "Multi-Agent Coordination Framework Repos",
+      "websetId": "webset_01kh35jvywzswv7kprwt6kyca5",
+      "entityType": "custom",
+      "priority": "medium",
+      "status": "running",
+      "itemsFound": 0,
+      "enrichments": 3
+    }
+  ],
+  "summary": {
+    "totalWebsets": 10,
+    "idle": 7,
+    "running": 3,
+    "totalItemsFoundSoFar": 391,
+    "totalEnrichments": 30
+  }
+}
