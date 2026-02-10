@@ -323,6 +323,43 @@ After agents complete:
 | `merge_proposal` also restricted | Same role-based permission model | Use proposal approval status as the gate, not merge status |
 | Proposals stuck in "reviewing" | No merge step after approval | Accept "approved review" as sufficient — merge is optional ceremony |
 
+### Round 3 Strategy: Demographics → Behavioral Signals
+
+**Context**: Round 3 tightened 14 queries from broad demographic categories to 10 behavioral-signal-based queries. Goal was to find people "very inclined to use Thoughtbox" by targeting demonstrated behaviors, not job titles or company categories.
+
+**The Core Shift**:
+| Demographic (Round 2) | Behavioral Signal (Round 3) |
+|---|---|
+| "AI engineers" (anyone) | Engineers who have **published about** agent orchestration |
+| "MCP server developers" (category) | MCP repos that specifically **address reasoning/planning** |
+| "Claude Code power users" (tool choice) | Tweets **expressing frustration** with agent opacity |
+| "AI-native startups" (broad funnel) | Companies whose **blog discusses** agent coordination pain |
+
+**The 6-Test Quality Bar** (applied by Reviewer to every query):
+1. **Behavioral Signal Test**: Does the query target a demonstrated behavior, not a demographic category?
+2. **Thoughtbox Relevance Test**: Is there a specific, clear connection to Thoughtbox's value (auditability, structured reasoning, multi-agent coordination)?
+3. **Web-Observable Test**: Can Exa actually verify these criteria from public web data? (star counts, employee numbers = NOT observable; blog posts, README content, tweet text = observable)
+4. **Docker-Ready Test**: Would this audience be technically sophisticated enough to run Docker locally?
+5. **Contact Path Test**: Do the enrichments extract actionable contact info (email, Twitter, website, LinkedIn)?
+6. **Sharpness Test**: Could this query return mostly noise, or is it targeted enough for high-signal results?
+
+**Results**:
+- 14 queries → 10 queries (within 8-12 target)
+- ~900 total results → 550 (more focused)
+- 5 dropped (too academic/indirect), 2 merge pairs, 5 sharpened, 2 brand new
+- Strongest queries: NQ3 (agent opacity pain tweets) and NQ8 (agent debugging blog authors) — both directly target the "aha moment"
+
+**Key Insight**: The "aha moment" for Thoughtbox is "realizing you can audit all actions AND reasoning of your agent teams." Find people who have **expressed** this exact pain or invested in solving adjacent problems (observability tools, multi-agent coordination).
+
+**Implementation Pattern**:
+```
+Proposal 1: Triage all queries (keep/sharpen/merge/drop) with reasoning
+Proposal 2: Draft tightened queries with full specs
+Proposal 3: Incorporate feedback + finalize
+
+Each proposal includes explicit before/after comparison and behavioral signal justification.
+```
+
 ### Anti-Patterns
 - **File-first comms**: Agents default to files because they're simpler. Explicitly route through Hub.
 - **Skipping cipher**: Thinker will skip notation loading unless it's a mandatory numbered step.
@@ -330,3 +367,4 @@ After agents complete:
 - **Proposal pile-up**: Without wait gates, Thinker creates all proposals at once. Reviewer can't keep up.
 - **Ambient signal leakage**: If you mention "canary at 100%" or "session pressure is high" in agent prompts, they panic and over-compress. Keep agent prompts context-free about parent session state.
 - **Permission assumptions**: Don't assume all Hub operations are available to all roles. Test `mark_consensus` and `merge_proposal` permissions during workspace setup, before launching agents.
+- **Demographic targeting in behavioral contexts**: When the goal is "find people very inclined to use X," demographic categories (job titles, company size, funding stage) are weak signals. Look for demonstrated behaviors (published content, built tools, expressed pain).
