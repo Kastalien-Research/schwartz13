@@ -28,6 +28,7 @@ import '../workflows/verifiedCollection.js';
 import '../workflows/searchAndRead.js';
 import '../workflows/expandAndCollect.js';
 import '../workflows/verifiedAnswer.js';
+import '../workflows/semanticCron.js';
 
 // Operation metadata
 interface OperationMeta {
