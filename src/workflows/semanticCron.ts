@@ -12,11 +12,18 @@ import {
 import { projectItem } from '../lib/projections.js';
 import { diceCoefficient } from './convergent.js';
 
+// --- Constants ---
+
+const MS_PER_DAY = 86_400_000;
+const DEFAULT_TIMEOUT_MS = 300_000;
+const DEFAULT_NAME_THRESHOLD = 0.85;
+const MAX_LENSES = 10;
+const MAX_CONDITIONS_PER_SHAPE = 20;
+const MAX_REGEX_LENGTH = 200;
+
 // --- Types ---
 
 interface SemanticCronConfig {
-  name?: string;
-  proxy?: string;
   lenses: LensConfig[];
   shapes: ShapeConfig[];
   join: JoinConfig;
@@ -46,21 +53,25 @@ interface ShapeConfig {
   logic: 'all' | 'any';
 }
 
+export type ConditionOperator =
+  | 'gte' | 'gt' | 'lte' | 'lt' | 'eq'
+  | 'contains' | 'matches' | 'oneOf'
+  | 'exists' | 'withinDays';
+
 interface Condition {
-  enrichment: string; // matches enrichment description
-  operator: string; // gte|gt|lte|lt|eq|contains|matches|oneOf|exists|withinDays
+  enrichment: string;
+  operator: ConditionOperator;
   value?: number | string | string[];
 }
 
 interface JoinConfig {
   by: 'entity' | 'temporal' | 'entity+temporal' | 'cooccurrence';
-  entityMatch?: { method?: string; nameThreshold?: number };
-  temporal?: { window?: string; days?: number };
+  entityMatch?: { nameThreshold?: number };
+  temporal?: { days?: number };
   minLensOverlap?: number;
 }
 
 interface SignalConfig {
-  proxy?: string;
   requires: {
     type: 'all' | 'any' | 'threshold' | 'combination';
     min?: number;
@@ -81,10 +92,8 @@ interface ShapedItem {
   id: string;
   name: string;
   url: string;
-  entityType: string;
   enrichments: Record<string, unknown>; // description → result value
   createdAt: string;
-  projected: Record<string, unknown>;
 }
 
 interface JoinedEntity {
@@ -109,7 +118,7 @@ export interface SignalResult {
   entities: string[];
 }
 
-interface SnapshotData {
+export interface SnapshotData {
   evaluatedAt: string;
   lenses: Record<
     string,
@@ -147,7 +156,9 @@ export function expandTemplates(
   const json = JSON.stringify(config);
   let expanded = json;
   for (const [key, value] of Object.entries(variables)) {
-    expanded = expanded.replaceAll(`{{${key}}}`, value);
+    // Escape value for JSON string context to prevent injection
+    const escaped = JSON.stringify(value).slice(1, -1);
+    expanded = expanded.replaceAll(`{{${key}}}`, escaped);
   }
 
   // Check for unresolved templates
@@ -167,7 +178,6 @@ export function expandTemplates(
 export interface ResolvedEnrichment {
   description: string;
   result: string[] | null;
-  format: string;
 }
 
 export function resolveEnrichmentDescriptions(
@@ -193,7 +203,7 @@ export function resolveEnrichmentDescriptions(
     for (const e of rawEnrichments) {
       const description = enrichmentMap.get(e.enrichmentId);
       if (description) {
-        resolved.push({ description, result: e.result, format: e.format });
+        resolved.push({ description, result: e.result });
       }
     }
     return { item, enrichments: resolved };
@@ -231,39 +241,42 @@ export function evaluateCondition(
     case 'eq': {
       const num = Number(raw);
       if (isNaN(num)) return false;
-      const target = condition.value as number;
+      if (typeof condition.value !== 'number') return false;
+      const target = condition.value;
       switch (condition.operator) {
-        case 'gte':
-          return num >= target;
-        case 'gt':
-          return num > target;
-        case 'lte':
-          return num <= target;
-        case 'lt':
-          return num < target;
-        case 'eq':
-          return num === target;
+        case 'gte': return num >= target;
+        case 'gt':  return num > target;
+        case 'lte': return num <= target;
+        case 'lt':  return num < target;
+        case 'eq':  return num === target;
       }
-      break;
     }
+    // falls through only if inner switch is exhaustive (it is) — unreachable
     case 'contains':
-      return raw.toLowerCase().includes((condition.value as string).toLowerCase());
-    case 'matches':
-      return new RegExp(condition.value as string).test(raw);
+      if (typeof condition.value !== 'string') return false;
+      return raw.toLowerCase().includes(condition.value.toLowerCase());
+    case 'matches': {
+      if (typeof condition.value !== 'string') return false;
+      if (condition.value.length > MAX_REGEX_LENGTH) return false;
+      try {
+        return new RegExp(condition.value).test(raw);
+      } catch {
+        return false; // Invalid regex pattern
+      }
+    }
     case 'oneOf': {
-      const options = condition.value as string[];
-      return options.some(opt => opt.toLowerCase() === raw.toLowerCase());
+      if (!Array.isArray(condition.value)) return false;
+      return condition.value.some(opt => opt.toLowerCase() === raw.toLowerCase());
     }
     case 'withinDays': {
+      if (typeof condition.value !== 'number') return false;
       const parsed = new Date(raw).getTime();
       if (isNaN(parsed)) return false;
-      const days = condition.value as number;
-      return Math.abs(Date.now() - parsed) <= days * 86400000;
+      return Math.abs(Date.now() - parsed) <= condition.value * MS_PER_DAY;
     }
     default:
       return false;
   }
-  return false;
 }
 
 export function evaluateShape(
@@ -284,7 +297,7 @@ export function joinLensResults(
   lensResults: LensResult[],
   joinConfig: JoinConfig,
 ): JoinResult {
-  const threshold = joinConfig.entityMatch?.nameThreshold ?? 0.85;
+  const threshold = joinConfig.entityMatch?.nameThreshold ?? DEFAULT_NAME_THRESHOLD;
   const minOverlap = joinConfig.minLensOverlap ?? 2;
   const temporalDays = joinConfig.temporal?.days;
 
@@ -297,6 +310,7 @@ export function joinLensResults(
   }
 
   // Entity or entity+temporal
+  const urlIndex = new Map<string, string>(); // url → entityMap key
   const entityMap = new Map<
     string,
     {
@@ -310,18 +324,18 @@ export function joinLensResults(
 
   for (const lr of lensResults) {
     for (const si of lr.shapedItems) {
-      let matched = false;
+      // Fast path: URL exact match via index
+      if (si.url && urlIndex.has(si.url)) {
+        const existing = entityMap.get(urlIndex.get(si.url)!)!;
+        existing.lenses.add(lr.lensId);
+        existing.shapes[lr.lensId] = si.enrichments;
+        existing.timestamps.push({ lensId: lr.lensId, createdAt: si.createdAt });
+        continue;
+      }
 
-      for (const [key, existing] of entityMap) {
-        // URL exact match
-        if (si.url && existing.url && si.url === existing.url) {
-          existing.lenses.add(lr.lensId);
-          existing.shapes[lr.lensId] = si.enrichments;
-          existing.timestamps.push({ lensId: lr.lensId, createdAt: si.createdAt });
-          matched = true;
-          break;
-        }
-        // Name fuzzy match
+      // Slow path: fuzzy name match
+      let matched = false;
+      for (const [, existing] of entityMap) {
         if (si.name && existing.entity && diceCoefficient(si.name, existing.entity) > threshold) {
           existing.lenses.add(lr.lensId);
           existing.shapes[lr.lensId] = si.enrichments;
@@ -340,6 +354,7 @@ export function joinLensResults(
           shapes: { [lr.lensId]: si.enrichments },
           timestamps: [{ lensId: lr.lensId, createdAt: si.createdAt }],
         });
+        if (si.url) urlIndex.set(si.url, key);
       }
     }
   }
@@ -352,18 +367,20 @@ export function joinLensResults(
     shapes: e.shapes,
   }));
 
-  // entity+temporal: filter by temporal window
+  // entity+temporal: filter by temporal window using timestamps from entityMap directly
   if (joinConfig.by === 'entity+temporal' && temporalDays) {
-    const windowMs = temporalDays * 86400000;
+    const windowMs = temporalDays * MS_PER_DAY;
+    // Build lookup from (entity+url) → timestamps
+    const timestampLookup = new Map<string, Array<{ lensId: string; createdAt: string }>>();
+    for (const entry of entityMap.values()) {
+      timestampLookup.set(`${entry.url}||${entry.entity}`, entry.timestamps);
+    }
+
     entities = entities.filter(ent => {
-      // Find underlying timestamps from entityMap
-      const entry = [...entityMap.values()].find(
-        e => e.entity === ent.entity && e.url === ent.url,
-      );
-      if (!entry) return false;
+      const ts = timestampLookup.get(`${ent.url}||${ent.entity}`);
+      if (!ts) return false;
 
       // Check if any two items from different lenses are within window
-      const ts = entry.timestamps;
       for (let i = 0; i < ts.length; i++) {
         for (let j = i + 1; j < ts.length; j++) {
           if (ts[i].lensId !== ts[j].lensId) {
@@ -393,7 +410,6 @@ function joinByCooccurrence(
   let lensesWithEvidence: string[];
 
   if (temporalDays) {
-    // Only count lenses whose shaped items fall within the window relative to earliest
     const allTimestamps: Array<{ lensId: string; time: number }> = [];
     for (const lr of lensResults) {
       for (const si of lr.shapedItems) {
@@ -406,7 +422,7 @@ function joinByCooccurrence(
     }
 
     const earliest = Math.min(...allTimestamps.map(t => t.time));
-    const windowMs = temporalDays * 86400000;
+    const windowMs = temporalDays * MS_PER_DAY;
     const qualifying = allTimestamps.filter(t => t.time - earliest <= windowMs);
     lensesWithEvidence = [...new Set(qualifying.map(t => t.lensId))];
   } else {
@@ -422,7 +438,7 @@ function joinByTemporal(
   lensResults: LensResult[],
   days: number,
 ): JoinResult {
-  const windowMs = days * 86400000;
+  const windowMs = days * MS_PER_DAY;
   const lensTimes = new Map<string, number[]>();
 
   for (const lr of lensResults) {
@@ -437,14 +453,20 @@ function joinByTemporal(
 
   for (let i = 0; i < lensIds.length; i++) {
     for (let j = i + 1; j < lensIds.length; j++) {
+      if (qualifying.has(lensIds[i]) && qualifying.has(lensIds[j])) continue;
+
       const timesA = lensTimes.get(lensIds[i])!;
       const timesB = lensTimes.get(lensIds[j])!;
 
+      let found = false;
       for (const ta of timesA) {
+        if (found) break;
         for (const tb of timesB) {
           if (Math.abs(ta - tb) <= windowMs) {
             qualifying.add(lensIds[i]);
             qualifying.add(lensIds[j]);
+            found = true;
+            break;
           }
         }
       }
@@ -675,6 +697,17 @@ export function buildSnapshot(
   };
 }
 
+// --- Helpers ---
+
+function extractEnrichmentMap(webset: any): Map<string, string> {
+  const map = new Map<string, string>();
+  const defs = webset.enrichments as Array<{ id: string; description: string }> | undefined;
+  if (defs) {
+    for (const def of defs) map.set(def.id, def.description);
+  }
+  return map;
+}
+
 // --- 7. Main Workflow ---
 
 async function semanticCronWorkflow(
@@ -690,13 +723,13 @@ async function semanticCronWorkflow(
   const variables = args.variables as Record<string, string> | undefined;
   const existingWebsets = args.existingWebsets as Record<string, string> | undefined;
   const previousSnapshot = args.previousSnapshot as SnapshotData | undefined;
-  const timeoutMs = (args.timeout as number) ?? 300_000;
+  const timeoutMs = (args.timeout as number) ?? DEFAULT_TIMEOUT_MS;
 
-  // Step: Validate + expand templates
+  // Step 0: Validate + expand templates
   const step0 = Date.now();
   store.updateProgress(taskId, { step: 'validating', completed: 0, total: 8 });
 
-  if (!rawConfig || !rawConfig.lenses || rawConfig.lenses.length === 0) {
+  if (!rawConfig || typeof rawConfig !== 'object' || !Array.isArray(rawConfig.lenses) || rawConfig.lenses.length === 0) {
     throw new WorkflowError('config.lenses is required and must be non-empty', 'validate');
   }
   if (!rawConfig.shapes || rawConfig.shapes.length === 0) {
@@ -708,15 +741,24 @@ async function semanticCronWorkflow(
   if (!rawConfig.signal) {
     throw new WorkflowError('config.signal is required', 'validate');
   }
+  if (rawConfig.lenses.length > MAX_LENSES) {
+    throw new WorkflowError(`Maximum ${MAX_LENSES} lenses allowed (got ${rawConfig.lenses.length})`, 'validate');
+  }
 
   const config = variables ? expandTemplates(rawConfig, variables) : rawConfig;
 
-  // Validate shape lens IDs reference existing lenses
+  // Validate shape lens IDs and condition counts
   const lensIds = config.lenses.map(l => l.id);
   for (const shape of config.shapes) {
     if (!lensIds.includes(shape.lensId)) {
       throw new WorkflowError(
         `Shape references unknown lens "${shape.lensId}". Available: ${lensIds.join(', ')}`,
+        'validate',
+      );
+    }
+    if (shape.conditions.length > MAX_CONDITIONS_PER_SHAPE) {
+      throw new WorkflowError(
+        `Maximum ${MAX_CONDITIONS_PER_SHAPE} conditions per shape (got ${shape.conditions.length})`,
         'validate',
       );
     }
@@ -728,13 +770,12 @@ async function semanticCronWorkflow(
 
   const isReeval = !!existingWebsets;
   const websetIds: Record<string, string> = existingWebsets ? { ...existingWebsets } : {};
-  const enrichmentMaps: Record<string, Map<string, string>> = {}; // lensId → Map<enrichmentId, description>
-
-  // Step: Create or fetch websets
+  const enrichmentMaps: Record<string, Map<string, string>> = {};
   const totalLenses = config.lenses.length;
+  let anyTimedOut = false;
 
+  // Step 1: Create or fetch websets
   if (!isReeval) {
-    // Initial run: create websets
     for (let i = 0; i < config.lenses.length; i++) {
       const stepStart = Date.now();
       const lens = config.lenses[i];
@@ -743,16 +784,17 @@ async function semanticCronWorkflow(
         step: `creating lens ${i + 1}/${totalLenses}: ${lens.id}`,
         completed: 1,
         total: 8,
+        message: `Lens ${i + 1} of ${totalLenses}`,
       });
 
       if (isCancelled(taskId, store)) {
-        // Cancel any already-created websets
         for (const id of Object.values(websetIds)) {
           await exa.websets.cancel(id);
         }
         return null;
       }
 
+      // Exa SDK types are incomplete for dynamic webset creation params
       let webset: any;
 
       if (lens.source.websetId) {
@@ -777,22 +819,10 @@ async function semanticCronWorkflow(
         websetIds[lens.id] = webset.id;
       }
 
-      // Extract enrichment id → description map
-      const enrichmentDefs = webset.enrichments as
-        | Array<{ id: string; description: string }>
-        | undefined;
-      const map = new Map<string, string>();
-      if (enrichmentDefs) {
-        for (const def of enrichmentDefs) {
-          map.set(def.id, def.description);
-        }
-      }
-      enrichmentMaps[lens.id] = map;
-
+      enrichmentMaps[lens.id] = extractEnrichmentMap(webset);
       tracker.track(`create-${lens.id}`, stepStart);
     }
   } else {
-    // Re-eval: fetch existing websets for enrichment definitions
     for (let i = 0; i < config.lenses.length; i++) {
       const lens = config.lenses[i];
       const wsId = websetIds[lens.id];
@@ -810,16 +840,7 @@ async function semanticCronWorkflow(
       });
 
       const webset = await exa.websets.get(wsId);
-      const enrichmentDefs = webset.enrichments as
-        | Array<{ id: string; description: string }>
-        | undefined;
-      const map = new Map<string, string>();
-      if (enrichmentDefs) {
-        for (const def of enrichmentDefs) {
-          map.set(def.id, def.description);
-        }
-      }
-      enrichmentMaps[lens.id] = map;
+      enrichmentMaps[lens.id] = extractEnrichmentMap(webset);
     }
   }
 
@@ -832,11 +853,14 @@ async function semanticCronWorkflow(
     return null;
   }
 
-  // Step: Poll websets (initial run only)
+  // Save partial result checkpoint
+  store.setPartialResult(taskId, { websetIds });
+
+  // Step 2: Poll websets (initial run only)
   if (!isReeval) {
     for (let i = 0; i < config.lenses.length; i++) {
       const lens = config.lenses[i];
-      if (lens.source.websetId) continue; // pre-existing webset, already idle
+      if (lens.source.websetId) continue;
 
       const stepStart = Date.now();
       store.updateProgress(taskId, {
@@ -845,7 +869,7 @@ async function semanticCronWorkflow(
         total: 8,
       });
 
-      await pollUntilIdle({
+      const { timedOut } = await pollUntilIdle({
         exa,
         websetId: websetIds[lens.id],
         taskId,
@@ -855,6 +879,7 @@ async function semanticCronWorkflow(
         totalSteps: 8,
       });
 
+      if (timedOut) anyTimedOut = true;
       tracker.track(`poll-${lens.id}`, stepStart);
 
       if (isCancelled(taskId, store)) {
@@ -866,131 +891,144 @@ async function semanticCronWorkflow(
     }
   }
 
-  // Step: Collect items + resolve enrichments + evaluate shapes
-  const stepCollect = Date.now();
-  store.updateProgress(taskId, { step: 'collecting items', completed: 3, total: 8 });
+  // Steps 3-8: Collect, shape, join, signal — wrapped for cleanup on exception
+  try {
+    // Step 3: Collect items + resolve enrichments
+    const stepCollect = Date.now();
+    store.updateProgress(taskId, { step: 'collecting items', completed: 3, total: 8 });
 
-  const lensResults: LensResult[] = [];
-
-  for (const lens of config.lenses) {
-    const wsId = websetIds[lens.id];
-    const rawItems = await collectItems(exa, wsId);
-
-    // Filter to items with satisfied evaluation
-    const passingItems = rawItems.filter(item => {
-      const evaluations = item.evaluations as
-        | Array<{ satisfied: string }>
-        | undefined;
-      if (!evaluations || evaluations.length === 0) return true;
-      return evaluations.some(e => e.satisfied === 'yes');
-    });
-
-    // Resolve enrichment descriptions
-    const resolved = resolveEnrichmentDescriptions(passingItems, enrichmentMaps[lens.id]);
-
-    // Apply shape evaluation
-    const shapesForLens = config.shapes.filter(s => s.lensId === lens.id);
-
-    const shapedItems: ShapedItem[] = [];
-    for (const { item, enrichments } of resolved) {
-      // Check if item passes any of the shapes for this lens
-      const passes =
-        shapesForLens.length === 0 ||
-        shapesForLens.some(shape => evaluateShape(shape, enrichments));
-
-      if (passes) {
-        const projected = projectItem(item);
-        const enrichmentValues: Record<string, unknown> = {};
-        for (const e of enrichments) {
-          enrichmentValues[e.description] = e.result?.[0] ?? null;
-        }
-
-        shapedItems.push({
-          id: (item.id as string) ?? '',
-          name: (projected.name as string) ?? '',
-          url: (projected.url as string) ?? '',
-          entityType: (projected.entityType as string) ?? '',
-          enrichments: enrichmentValues,
-          createdAt: (item.createdAt as string) ?? new Date().toISOString(),
-          projected,
-        });
-      }
-    }
-
-    lensResults.push({
-      lensId: lens.id,
-      websetId: wsId,
-      totalItems: rawItems.length,
-      shapedItems,
-    });
-  }
-
-  tracker.track('collect-shape', stepCollect);
-
-  if (isCancelled(taskId, store)) return null;
-
-  // Step: Join
-  const stepJoin = Date.now();
-  store.updateProgress(taskId, { step: 'joining lenses', completed: 5, total: 8 });
-  const joinResult = joinLensResults(lensResults, config.join);
-  tracker.track('join', stepJoin);
-
-  // Step: Evaluate signal
-  const stepSignal = Date.now();
-  store.updateProgress(taskId, { step: 'evaluating signal', completed: 6, total: 8 });
-  const signalResult = evaluateSignal(joinResult, config.signal, lensIds);
-  tracker.track('signal', stepSignal);
-
-  // Step: Build snapshot
-  const snapshot = buildSnapshot(lensResults, joinResult, signalResult, websetIds);
-
-  // Step: Create monitors (initial run only, non-fatal)
-  if (!isReeval && config.monitor) {
-    const stepMon = Date.now();
-    store.updateProgress(taskId, { step: 'creating monitors', completed: 7, total: 8 });
+    const lensResults: LensResult[] = [];
 
     for (const lens of config.lenses) {
-      try {
-        await (exa.websets.monitors as any).create(websetIds[lens.id], {
-          schedule: {
-            cron: config.monitor.cron,
-            timezone: config.monitor.timezone,
-          },
-        });
-      } catch {
-        // Monitor creation failure is non-fatal
+      const wsId = websetIds[lens.id];
+      const rawItems = await collectItems(exa, wsId);
+
+      // Filter to items with satisfied evaluation
+      const passingItems = rawItems.filter(item => {
+        const evaluations = item.evaluations as
+          | Array<{ satisfied: string }>
+          | undefined;
+        if (!evaluations || evaluations.length === 0) return true;
+        return evaluations.some(e => e.satisfied === 'yes');
+      });
+
+      // Resolve enrichment descriptions
+      const resolved = resolveEnrichmentDescriptions(passingItems, enrichmentMaps[lens.id]);
+
+      // Apply shape evaluation
+      const shapesForLens = config.shapes.filter(s => s.lensId === lens.id);
+
+      const shapedItems: ShapedItem[] = [];
+      for (const { item, enrichments } of resolved) {
+        const passes =
+          shapesForLens.length === 0 ||
+          shapesForLens.some(shape => evaluateShape(shape, enrichments));
+
+        if (passes) {
+          const projected = projectItem(item);
+          const enrichmentValues: Record<string, unknown> = {};
+          for (const e of enrichments) {
+            enrichmentValues[e.description] = e.result?.[0] ?? null;
+          }
+
+          shapedItems.push({
+            id: (item.id as string) ?? '',
+            name: (projected.name as string) ?? '',
+            url: (projected.url as string) ?? '',
+            enrichments: enrichmentValues,
+            createdAt: (item.createdAt as string) ?? new Date().toISOString(),
+          });
+        }
+      }
+
+      lensResults.push({
+        lensId: lens.id,
+        websetId: wsId,
+        totalItems: rawItems.length,
+        shapedItems,
+      });
+    }
+
+    tracker.track('collect-shape', stepCollect);
+
+    if (isCancelled(taskId, store)) return null;
+
+    // Step 4: Join
+    const stepJoin = Date.now();
+    store.updateProgress(taskId, { step: 'joining lenses', completed: 4, total: 8 });
+    const joinResult = joinLensResults(lensResults, config.join);
+    tracker.track('join', stepJoin);
+
+    // Step 5: Evaluate signal
+    const stepSignal = Date.now();
+    store.updateProgress(taskId, { step: 'evaluating signal', completed: 5, total: 8 });
+    const signalResult = evaluateSignal(joinResult, config.signal, lensIds);
+    tracker.track('signal', stepSignal);
+
+    // Step 6: Build snapshot
+    store.updateProgress(taskId, { step: 'building snapshot', completed: 6, total: 8 });
+    const snapshot = buildSnapshot(lensResults, joinResult, signalResult, websetIds);
+
+    // Step 7: Create monitors (initial run only, non-fatal)
+    const monitorErrors: string[] = [];
+    if (!isReeval && config.monitor) {
+      const stepMon = Date.now();
+      store.updateProgress(taskId, { step: 'creating monitors', completed: 7, total: 8 });
+
+      for (const lens of config.lenses) {
+        try {
+          await (exa.websets.monitors as any).create(websetIds[lens.id], {
+            schedule: {
+              cron: config.monitor.cron,
+              timezone: config.monitor.timezone,
+            },
+          });
+        } catch (err) {
+          monitorErrors.push(`${lens.id}: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+      tracker.track('monitors', stepMon);
+    }
+
+    store.updateProgress(taskId, { step: 'complete', completed: 8, total: 8 });
+
+    const duration = Date.now() - startTime;
+
+    // Build result
+    const totalShaped = lensResults.reduce((sum, lr) => sum + lr.shapedItems.length, 0);
+    const totalItems = lensResults.reduce((sum, lr) => sum + lr.totalItems, 0);
+
+    const result: Record<string, unknown> = {
+      websetIds,
+      snapshot,
+      duration,
+      steps: tracker.steps,
+    };
+
+    if (anyTimedOut) result.timedOut = true;
+    if (monitorErrors.length > 0) result.monitorErrors = monitorErrors;
+
+    if (isReeval && previousSnapshot) {
+      result.delta = computeDelta(snapshot, previousSnapshot);
+    }
+
+    const signalStr = signalResult.fired
+      ? `FIRED (${signalResult.entities.length} entities)`
+      : 'not fired';
+
+    return withSummary(
+      result,
+      `${totalLenses} lenses, ${totalItems} items → ${totalShaped} shaped, ${joinResult.entities.length} joined entities, signal: ${signalStr} in ${(duration / 1000).toFixed(0)}s`,
+    );
+  } catch (err) {
+    // Clean up created websets on unexpected failure
+    if (!isReeval) {
+      for (const id of Object.values(websetIds)) {
+        try { await exa.websets.cancel(id); } catch { /* best effort */ }
       }
     }
-    tracker.track('monitors', stepMon);
+    throw err;
   }
-
-  store.updateProgress(taskId, { step: 'complete', completed: 8, total: 8 });
-
-  const duration = Date.now() - startTime;
-
-  // Build result
-  const totalShaped = lensResults.reduce((sum, lr) => sum + lr.shapedItems.length, 0);
-  const totalItems = lensResults.reduce((sum, lr) => sum + lr.totalItems, 0);
-
-  const result: Record<string, unknown> = {
-    websetIds,
-    snapshot,
-    duration,
-    steps: tracker.steps,
-  };
-
-  if (isReeval && previousSnapshot) {
-    result.delta = computeDelta(snapshot, previousSnapshot);
-  }
-
-  const signalStr = signalResult.fired
-    ? `FIRED (${signalResult.entities.length} entities)`
-    : 'not fired';
-
-  return withSummary(
-    result,
-    `${totalLenses} lenses, ${totalItems} items → ${totalShaped} shaped, ${joinResult.entities.length} joined entities, signal: ${signalStr} in ${(duration / 1000).toFixed(0)}s`,
-  );
 }
 
 // Register

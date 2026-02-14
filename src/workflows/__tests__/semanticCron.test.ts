@@ -8,8 +8,10 @@ import {
   evaluateSignal,
   computeDelta,
   buildSnapshot,
+  type ConditionOperator,
   type JoinResult,
   type SignalResult,
+  type SnapshotData,
 } from '../semanticCron.js';
 import { TaskStore } from '../../lib/taskStore.js';
 import '../semanticCron.js';
@@ -126,7 +128,7 @@ describe('expandTemplates', () => {
     shapes: [
       {
         lensId: 'hiring',
-        conditions: [{ enrichment: 'Number of {{role}} roles', operator: 'gte', value: 5 }],
+        conditions: [{ enrichment: 'Number of {{role}} roles', operator: 'gte' as const, value: 5 }],
         logic: 'all' as const,
       },
     ],
@@ -341,16 +343,16 @@ describe('evaluateCondition', () => {
 
 describe('evaluateShape', () => {
   const enrichments = [
-    { description: 'Employee count', result: ['150'] as string[] | null, format: 'number' },
-    { description: 'Funding stage', result: ['Series B'] as string[] | null, format: 'text' },
+    { description: 'Employee count', result: ['150'] as string[] | null },
+    { description: 'Funding stage', result: ['Series B'] as string[] | null },
   ];
 
   it('all logic: true when all conditions pass', () => {
     const shape = {
       lensId: 'test',
       conditions: [
-        { enrichment: 'Employee count', operator: 'gte', value: 100 },
-        { enrichment: 'Funding stage', operator: 'contains', value: 'Series' },
+        { enrichment: 'Employee count', operator: 'gte' as const, value: 100 },
+        { enrichment: 'Funding stage', operator: 'contains' as const, value: 'Series' },
       ],
       logic: 'all' as const,
     };
@@ -361,8 +363,8 @@ describe('evaluateShape', () => {
     const shape = {
       lensId: 'test',
       conditions: [
-        { enrichment: 'Employee count', operator: 'gte', value: 200 }, // fails: 150 < 200
-        { enrichment: 'Funding stage', operator: 'contains', value: 'Series' },
+        { enrichment: 'Employee count', operator: 'gte' as const, value: 200 }, // fails: 150 < 200
+        { enrichment: 'Funding stage', operator: 'contains' as const, value: 'Series' },
       ],
       logic: 'all' as const,
     };
@@ -373,8 +375,8 @@ describe('evaluateShape', () => {
     const shape = {
       lensId: 'test',
       conditions: [
-        { enrichment: 'Employee count', operator: 'gte', value: 200 }, // fails
-        { enrichment: 'Funding stage', operator: 'contains', value: 'Series' }, // passes
+        { enrichment: 'Employee count', operator: 'gte' as const, value: 200 }, // fails
+        { enrichment: 'Funding stage', operator: 'contains' as const, value: 'Series' }, // passes
       ],
       logic: 'any' as const,
     };
@@ -384,7 +386,7 @@ describe('evaluateShape', () => {
   it('returns false for missing enrichment', () => {
     const shape = {
       lensId: 'test',
-      conditions: [{ enrichment: 'Nonexistent', operator: 'exists' }],
+      conditions: [{ enrichment: 'Nonexistent', operator: 'exists' as const }],
       logic: 'all' as const,
     };
     expect(evaluateShape(shape, enrichments)).toBe(false);
@@ -406,7 +408,7 @@ describe('joinLensResults — entity', () => {
         websetId: 'ws_1',
         totalItems: 2,
         shapedItems: [
-          { id: '1', name: 'Acme', url: 'https://acme.com', entityType: 'company', enrichments: { x: 1 }, createdAt: '2026-01-15T00:00:00Z', projected: {} },
+          { id: '1', name: 'Acme', url: 'https://acme.com', enrichments:{ x: 1 }, createdAt: '2026-01-15T00:00:00Z' },
         ],
       },
       {
@@ -414,7 +416,7 @@ describe('joinLensResults — entity', () => {
         websetId: 'ws_2',
         totalItems: 2,
         shapedItems: [
-          { id: '2', name: 'Acme Corp', url: 'https://acme.com', entityType: 'company', enrichments: { y: 2 }, createdAt: '2026-01-16T00:00:00Z', projected: {} },
+          { id: '2', name: 'Acme Corp', url: 'https://acme.com', enrichments:{ y: 2 }, createdAt: '2026-01-16T00:00:00Z' },
         ],
       },
     ];
@@ -434,7 +436,7 @@ describe('joinLensResults — entity', () => {
         websetId: 'ws_1',
         totalItems: 1,
         shapedItems: [
-          { id: '1', name: 'Acme Corporation', url: 'https://a.com', entityType: 'company', enrichments: {}, createdAt: '2026-01-15T00:00:00Z', projected: {} },
+          { id: '1', name: 'Acme Corporation', url: 'https://a.com', enrichments:{}, createdAt: '2026-01-15T00:00:00Z' },
         ],
       },
       {
@@ -442,7 +444,7 @@ describe('joinLensResults — entity', () => {
         websetId: 'ws_2',
         totalItems: 1,
         shapedItems: [
-          { id: '2', name: 'Acme Corporation', url: 'https://b.com', entityType: 'company', enrichments: {}, createdAt: '2026-01-15T00:00:00Z', projected: {} },
+          { id: '2', name: 'Acme Corporation', url: 'https://b.com', enrichments:{}, createdAt: '2026-01-15T00:00:00Z' },
         ],
       },
     ];
@@ -460,7 +462,7 @@ describe('joinLensResults — entity', () => {
         websetId: 'ws_1',
         totalItems: 1,
         shapedItems: [
-          { id: '1', name: 'Solo', url: 'https://solo.com', entityType: 'company', enrichments: {}, createdAt: '2026-01-15T00:00:00Z', projected: {} },
+          { id: '1', name: 'Solo', url: 'https://solo.com', enrichments:{}, createdAt: '2026-01-15T00:00:00Z' },
         ],
       },
       {
@@ -468,7 +470,7 @@ describe('joinLensResults — entity', () => {
         websetId: 'ws_2',
         totalItems: 1,
         shapedItems: [
-          { id: '2', name: 'Different', url: 'https://diff.com', entityType: 'company', enrichments: {}, createdAt: '2026-01-15T00:00:00Z', projected: {} },
+          { id: '2', name: 'Different', url: 'https://diff.com', enrichments:{}, createdAt: '2026-01-15T00:00:00Z' },
         ],
       },
     ];
@@ -484,7 +486,7 @@ describe('joinLensResults — entity', () => {
         websetId: 'ws_1',
         totalItems: 1,
         shapedItems: [
-          { id: '1', name: 'Acme', url: 'https://acme.com', entityType: 'company', enrichments: {}, createdAt: '2026-01-01T00:00:00Z', projected: {} },
+          { id: '1', name: 'Acme', url: 'https://acme.com', enrichments:{}, createdAt: '2026-01-01T00:00:00Z' },
         ],
       },
       {
@@ -492,7 +494,7 @@ describe('joinLensResults — entity', () => {
         websetId: 'ws_2',
         totalItems: 1,
         shapedItems: [
-          { id: '2', name: 'Acme', url: 'https://acme.com', entityType: 'company', enrichments: {}, createdAt: '2026-06-01T00:00:00Z', projected: {} },
+          { id: '2', name: 'Acme', url: 'https://acme.com', enrichments:{}, createdAt: '2026-06-01T00:00:00Z' },
         ],
       },
     ];
@@ -512,7 +514,7 @@ describe('joinLensResults — entity', () => {
         websetId: 'ws_1',
         totalItems: 1,
         shapedItems: [
-          { id: '1', name: 'Acme', url: 'https://acme.com', entityType: 'company', enrichments: {}, createdAt: '2026-01-15T00:00:00Z', projected: {} },
+          { id: '1', name: 'Acme', url: 'https://acme.com', enrichments:{}, createdAt: '2026-01-15T00:00:00Z' },
         ],
       },
       {
@@ -520,7 +522,7 @@ describe('joinLensResults — entity', () => {
         websetId: 'ws_2',
         totalItems: 1,
         shapedItems: [
-          { id: '2', name: 'Acme', url: 'https://acme.com', entityType: 'company', enrichments: {}, createdAt: '2026-01-17T00:00:00Z', projected: {} },
+          { id: '2', name: 'Acme', url: 'https://acme.com', enrichments:{}, createdAt: '2026-01-17T00:00:00Z' },
         ],
       },
     ];
@@ -537,20 +539,20 @@ describe('joinLensResults — entity', () => {
       {
         lensId: 'a', websetId: 'ws_1', totalItems: 2,
         shapedItems: [
-          { id: '1', name: 'Acme', url: 'https://acme.com', entityType: 'company', enrichments: {}, createdAt: '2026-01-15T00:00:00Z', projected: {} },
-          { id: '2', name: 'Beta', url: 'https://beta.com', entityType: 'company', enrichments: {}, createdAt: '2026-01-15T00:00:00Z', projected: {} },
+          { id: '1', name: 'Acme', url: 'https://acme.com', enrichments:{}, createdAt: '2026-01-15T00:00:00Z' },
+          { id: '2', name: 'Beta', url: 'https://beta.com', enrichments:{}, createdAt: '2026-01-15T00:00:00Z' },
         ],
       },
       {
         lensId: 'b', websetId: 'ws_2', totalItems: 1,
         shapedItems: [
-          { id: '3', name: 'Acme', url: 'https://acme.com', entityType: 'company', enrichments: {}, createdAt: '2026-01-15T00:00:00Z', projected: {} },
+          { id: '3', name: 'Acme', url: 'https://acme.com', enrichments:{}, createdAt: '2026-01-15T00:00:00Z' },
         ],
       },
       {
         lensId: 'c', websetId: 'ws_3', totalItems: 1,
         shapedItems: [
-          { id: '4', name: 'Acme', url: 'https://acme.com', entityType: 'company', enrichments: {}, createdAt: '2026-01-15T00:00:00Z', projected: {} },
+          { id: '4', name: 'Acme', url: 'https://acme.com', enrichments:{}, createdAt: '2026-01-15T00:00:00Z' },
         ],
       },
     ];
@@ -567,11 +569,11 @@ describe('joinLensResults — cooccurrence/temporal', () => {
   it('cooccurrence: lists lenses with shaped items', () => {
     const lensResults = [
       { lensId: 'a', websetId: 'ws_1', totalItems: 5, shapedItems: [
-        { id: '1', name: 'X', url: '', entityType: '', enrichments: {}, createdAt: '2026-01-15T00:00:00Z', projected: {} },
+        { id: '1', name: 'X', url: '', enrichments:{}, createdAt: '2026-01-15T00:00:00Z' },
       ] },
       { lensId: 'b', websetId: 'ws_2', totalItems: 5, shapedItems: [] },
       { lensId: 'c', websetId: 'ws_3', totalItems: 5, shapedItems: [
-        { id: '2', name: 'Y', url: '', entityType: '', enrichments: {}, createdAt: '2026-01-15T00:00:00Z', projected: {} },
+        { id: '2', name: 'Y', url: '', enrichments:{}, createdAt: '2026-01-15T00:00:00Z' },
       ] },
     ];
 
@@ -585,13 +587,13 @@ describe('joinLensResults — cooccurrence/temporal', () => {
   it('temporal: joins lenses with overlapping timestamps', () => {
     const lensResults = [
       { lensId: 'a', websetId: 'ws_1', totalItems: 1, shapedItems: [
-        { id: '1', name: 'X', url: '', entityType: '', enrichments: {}, createdAt: '2026-01-15T00:00:00Z', projected: {} },
+        { id: '1', name: 'X', url: '', enrichments:{}, createdAt: '2026-01-15T00:00:00Z' },
       ] },
       { lensId: 'b', websetId: 'ws_2', totalItems: 1, shapedItems: [
-        { id: '2', name: 'Y', url: '', entityType: '', enrichments: {}, createdAt: '2026-01-16T00:00:00Z', projected: {} },
+        { id: '2', name: 'Y', url: '', enrichments:{}, createdAt: '2026-01-16T00:00:00Z' },
       ] },
       { lensId: 'c', websetId: 'ws_3', totalItems: 1, shapedItems: [
-        { id: '3', name: 'Z', url: '', entityType: '', enrichments: {}, createdAt: '2026-06-01T00:00:00Z', projected: {} },
+        { id: '3', name: 'Z', url: '', enrichments:{}, createdAt: '2026-06-01T00:00:00Z' },
       ] },
     ];
 
@@ -605,10 +607,10 @@ describe('joinLensResults — cooccurrence/temporal', () => {
   it('cooccurrence with temporal window filters by time', () => {
     const lensResults = [
       { lensId: 'a', websetId: 'ws_1', totalItems: 1, shapedItems: [
-        { id: '1', name: 'X', url: '', entityType: '', enrichments: {}, createdAt: '2026-01-15T00:00:00Z', projected: {} },
+        { id: '1', name: 'X', url: '', enrichments:{}, createdAt: '2026-01-15T00:00:00Z' },
       ] },
       { lensId: 'b', websetId: 'ws_2', totalItems: 1, shapedItems: [
-        { id: '2', name: 'Y', url: '', entityType: '', enrichments: {}, createdAt: '2026-12-01T00:00:00Z', projected: {} },
+        { id: '2', name: 'Y', url: '', enrichments:{}, createdAt: '2026-12-01T00:00:00Z' },
       ] },
     ];
 
@@ -882,7 +884,7 @@ describe('buildSnapshot', () => {
         websetId: 'ws_1',
         totalItems: 10,
         shapedItems: [
-          { id: '1', name: 'Acme', url: 'https://acme.com', entityType: 'company', enrichments: { roles: '15' }, createdAt: '2026-01-15T00:00:00Z', projected: {} },
+          { id: '1', name: 'Acme', url: 'https://acme.com', enrichments:{ roles: '15' }, createdAt: '2026-01-15T00:00:00Z' },
         ],
       },
     ];
@@ -902,6 +904,117 @@ describe('buildSnapshot', () => {
     expect(snapshot.lenses.hiring.shapes[0].name).toBe('Acme');
     expect(snapshot.join).toBe(joinResult);
     expect(snapshot.signal).toBe(signalResult);
+  });
+});
+
+// --- Security & bounds tests ---
+
+describe('evaluateCondition — security', () => {
+  it('rejects regex longer than MAX_REGEX_LENGTH (200)', () => {
+    const longPattern = 'a'.repeat(201);
+    expect(
+      evaluateCondition({ enrichment: 'x', operator: 'matches', value: longPattern }, ['aaa']),
+    ).toBe(false);
+  });
+
+  it('returns false for invalid regex pattern', () => {
+    expect(
+      evaluateCondition({ enrichment: 'x', operator: 'matches', value: '[invalid' }, ['test']),
+    ).toBe(false);
+  });
+
+  it('returns false when numeric operator given non-number value', () => {
+    expect(
+      evaluateCondition(
+        { enrichment: 'x', operator: 'gte', value: 'not-a-number' as any },
+        ['10'],
+      ),
+    ).toBe(false);
+  });
+
+  it('returns false when contains operator given non-string value', () => {
+    expect(
+      evaluateCondition(
+        { enrichment: 'x', operator: 'contains', value: 123 as any },
+        ['hello'],
+      ),
+    ).toBe(false);
+  });
+
+  it('returns false when oneOf operator given non-array value', () => {
+    expect(
+      evaluateCondition(
+        { enrichment: 'x', operator: 'oneOf', value: 'not-array' as any },
+        ['hello'],
+      ),
+    ).toBe(false);
+  });
+
+  it('returns false when withinDays operator given non-number value', () => {
+    expect(
+      evaluateCondition(
+        { enrichment: 'x', operator: 'withinDays', value: 'five' as any },
+        [new Date().toISOString()],
+      ),
+    ).toBe(false);
+  });
+});
+
+describe('expandTemplates — security', () => {
+  it('escapes JSON special characters in variable values', () => {
+    const cfg = {
+      lenses: [{ id: 'a', source: { query: '{{input}}' } }],
+      shapes: [],
+      join: { by: 'entity' as const },
+      signal: { requires: { type: 'all' as const } },
+    };
+    // Value with quotes and backslashes that could break JSON
+    const result = expandTemplates(cfg, { input: 'value "with" quotes\\and\\backslash' });
+    expect(result.lenses[0].source.query).toBe('value "with" quotes\\and\\backslash');
+  });
+});
+
+describe('validation bounds', () => {
+  const workflow = workflowRegistry.get('semantic.cron')!;
+
+  it('rejects more than 10 lenses', async () => {
+    const store = new TaskStore();
+    const lenses = Array.from({ length: 11 }, (_, i) => ({
+      id: `lens_${i}`,
+      source: { query: 'test' },
+    }));
+    const task = store.create('semantic.cron', {
+      config: {
+        lenses,
+        shapes: [{ lensId: 'lens_0', conditions: [{ enrichment: 'X', operator: 'exists' }], logic: 'all' }],
+        join: { by: 'entity' },
+        signal: { requires: { type: 'all' } },
+      },
+    });
+    await expect(workflow(task.id, task.args, {} as any, store)).rejects.toThrow(
+      'Maximum 10 lenses allowed',
+    );
+    store.dispose();
+  });
+
+  it('rejects more than 20 conditions per shape', async () => {
+    const store = new TaskStore();
+    const conditions = Array.from({ length: 21 }, (_, i) => ({
+      enrichment: `e_${i}`,
+      operator: 'exists' as ConditionOperator,
+    }));
+    const task = store.create('semantic.cron', {
+      config: {
+        lenses: [{ id: 'a', source: { query: 'test' } }],
+        shapes: [{ lensId: 'a', conditions, logic: 'all' }],
+        join: { by: 'entity' },
+        signal: { requires: { type: 'all' } },
+      },
+    });
+    await expect(workflow(task.id, task.args, {} as any, store)).rejects.toThrow(
+      'Maximum 20 conditions per shape',
+    );
+    store.dispose();
   });
 });
 
