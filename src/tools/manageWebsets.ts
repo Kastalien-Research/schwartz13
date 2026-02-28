@@ -31,12 +31,12 @@ import '../workflows/verifiedAnswer.js';
 import '../workflows/semanticCron.js';
 
 // Operation metadata
-interface OperationMeta {
+export interface OperationMeta {
   handler: OperationHandler;
   summary: string;
 }
 
-const OPERATIONS: Record<string, OperationMeta> = {
+export const OPERATIONS: Record<string, OperationMeta> = {
   'websets.create': { handler: websets.create, summary: 'Create a new webset' },
   'websets.get': { handler: websets.get, summary: 'Get a webset by ID' },
   'websets.list': { handler: websets.list, summary: 'List all websets' },
@@ -101,7 +101,7 @@ const OPERATIONS: Record<string, OperationMeta> = {
 
 const OPERATION_NAMES = Object.keys(OPERATIONS) as [string, ...string[]];
 
-const OPERATION_SCHEMAS: Record<string, z.ZodTypeAny> = {
+export const OPERATION_SCHEMAS: Record<string, z.ZodTypeAny> = {
   'websets.create': websets.Schemas.create,
   'websets.get': websets.Schemas.get,
   'websets.list': websets.Schemas.list,

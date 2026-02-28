@@ -4,6 +4,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { Exa } from "exa-js";
 import { registerManageWebsetsTool } from "./tools/manageWebsets.js";
+import { registerAppTools } from "./tools/appTools.js";
 import type { Express, Request, Response } from "express";
 
 export interface ServerConfig {
@@ -125,6 +126,8 @@ export function createServer(config: ServerConfig): ServerInstance {
         registerManageWebsetsTool(server, exa, {
           defaultCompatMode: config.defaultCompatMode ?? 'strict',
         });
+
+        registerAppTools(server, exa);
 
         transport.onclose = () => {
           const entry = sessions.get(transport.sessionId || newSessionId);
