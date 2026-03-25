@@ -43,6 +43,10 @@ The server exposes three tools:
 2. **`execute`** — Code Mode execution: run JS code with `callOperation()` in a sandboxed `vm`
 3. **`status`** — Account overview: webset counts, running tasks, active monitors, server capabilities
 
+## Verification
+
+Do not use curl to verify behavior. Use the MCP `execute` tool with `callOperation()` — that's the Code Mode pattern this server is built on.
+
 ## Agent Guidance
 
 - Keep docs aligned with Docker-first operation.
