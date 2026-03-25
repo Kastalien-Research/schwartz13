@@ -26,10 +26,26 @@ const server = new Server(
   { item and enrichment data }
 </channel>
 
-## How to react
+## How to react by event type
 
-When you receive a **webset.item.created** or **webset.item.enriched** event:
+### NEW_OPPORTUNITY_CANDIDATE events
 
+When event_type is **NEW_OPPORTUNITY_CANDIDATE**, the payload contains a scored company candidate from the design-partner radar:
+
+- **claim_and_research** (score >= 10): This is a high-priority candidate. Immediately run the research workflow:
+  1. Use exa.search to verify the signal and gather context
+  2. Use exa.getContents on the primary URL for full evidence
+  3. Run parallel subagent searches: signal verification, buyer mapping, angle building
+  4. Store the research brief via store.saveVerdict
+  5. Report findings to the user with recommended action
+
+- **queue_for_review** (score 7-9): Log the candidate for the user's review. Summarize the lens hits and score components. Do not auto-research unless the user requests it.
+
+- **monitor** (score < 7): Log the detection briefly. No action needed unless the user asks.
+
+### webset.item.created / webset.item.enriched events
+
+For raw item events (not already processed into candidates):
 1. Read the entity name and enrichment values from the event payload
 2. Use the websets MCP server (search + execute tools) to research the entity further
 3. Launch parallel searches for context:
@@ -41,9 +57,12 @@ When you receive a **webset.item.created** or **webset.item.enriched** event:
    - store.annotate with type "research_finding" for key discoveries
 5. Synthesize findings and report to the user
 
-When you receive a **webset.idle** event:
-- The webset has finished populating. Run store.listUninvestigated to see which items haven't been researched yet.
-- Consider triggering a semantic.cron evaluation if this is part of a composite signal setup.
+### webset.idle events
+
+The webset has finished populating. Report this to the user and:
+- Run store.listUninvestigated to see which items haven't been researched yet
+- Run store.listCandidates to show the current pipeline status
+- Consider triggering a semantic.cron evaluation if this is part of a composite signal setup
 
 You can spin up multiple subagent searches in parallel — the Exa search API is
 stateless and session-independent. The webset continues populating while you research.
@@ -62,7 +81,10 @@ stateless and session-independent. The webset continues populating while you res
 - exa.answer(query) — question answering with citations
 - store.annotate(itemId, type, value) — annotate item in local store
 - store.getItem(itemId) — get item with all annotations
-- store.listUninvestigated(websetId?) — items needing research`,
+- store.listUninvestigated(websetId?) — items needing research
+- store.upsertCompany(domain, name) — create or update company record
+- store.getCompany(domain) — get company with lens hits, score, and verdict
+- store.listCandidates(minScore?, verdict?) — list candidate companies`,
   },
 );
 

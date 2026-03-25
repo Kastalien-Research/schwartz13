@@ -3,6 +3,32 @@
 
 import crypto from 'node:crypto';
 import { upsertItem, insertEvent } from '../store/db.js';
+import { processWebhookItem } from './receiverRules.js';
+
+/**
+ * Maps webset IDs to lens IDs for the design-partner radar.
+ * Configure via setWebsetLensMap() or environment variable WEBSET_LENS_MAP (JSON).
+ */
+let websetLensMap = new Map<string, string>();
+
+// Initialize from env if available
+try {
+  const envMap = process.env.WEBSET_LENS_MAP;
+  if (envMap) {
+    const parsed = JSON.parse(envMap) as Record<string, string>;
+    websetLensMap = new Map(Object.entries(parsed));
+  }
+} catch {
+  // Non-fatal
+}
+
+export function setWebsetLensMap(map: Map<string, string>): void {
+  websetLensMap = map;
+}
+
+export function getWebsetLensMap(): Map<string, string> {
+  return websetLensMap;
+}
 
 export interface WebhookEvent {
   id: string;
@@ -67,6 +93,33 @@ class WebhookEventBus {
             raw: data,
             createdAt: data.createdAt as string | undefined,
           });
+        }
+      }
+      // Process through receiver rules for item events
+      if (event.type === 'webset.item.created' || event.type === 'webset.item.enriched') {
+        try {
+          const candidate = processWebhookItem(event, websetLensMap);
+          if (candidate) {
+            // Emit a synthetic event for the candidate
+            const candidateEvent: WebhookEvent = {
+              id: `${event.id}_candidate`,
+              type: 'NEW_OPPORTUNITY_CANDIDATE',
+              receivedAt: new Date().toISOString(),
+              payload: { candidate },
+            };
+            // Persist the candidate event
+            insertEvent({
+              id: candidateEvent.id,
+              type: candidateEvent.type,
+              payload: candidateEvent.payload,
+            });
+            // Broadcast candidate event after the original
+            for (const cb of this.subscribers) {
+              try { cb(candidateEvent); } catch { /* non-fatal */ }
+            }
+          }
+        } catch {
+          // Receiver rule errors are non-fatal
         }
       }
     } catch {

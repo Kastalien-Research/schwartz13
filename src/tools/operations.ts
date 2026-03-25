@@ -96,6 +96,12 @@ export const OPERATIONS: Record<string, OperationMeta> = {
   'store.getItem': { handler: store.getItem, summary: 'Get item with annotations from local store' },
   'store.listUninvestigated': { handler: store.listUninvestigated, summary: 'List items without judgment annotations' },
   'store.query': { handler: store.query, summary: 'Read-only SQL query on local store' },
+  'store.upsertCompany': { handler: store.upsertCompany, summary: 'Upsert a company record (dedup by domain)' },
+  'store.recordLensHit': { handler: store.recordLensHit, summary: 'Record a lens hit for a company' },
+  'store.updateScore': { handler: store.updateScoreOp, summary: 'Update company score and verdict' },
+  'store.saveVerdict': { handler: store.saveVerdictOp, summary: 'Save a verdict for a company' },
+  'store.getCompany': { handler: store.getCompanyOp, summary: 'Get company with lens hits, score, and verdict' },
+  'store.listCandidates': { handler: store.listCandidatesOp, summary: 'List candidate companies by score/verdict' },
 };
 
 export const OPERATION_NAMES = Object.keys(OPERATIONS) as [string, ...string[]];
@@ -165,6 +171,12 @@ export const OPERATION_SCHEMAS: Record<string, z.ZodTypeAny> = {
   'store.getItem': store.Schemas.getItem,
   'store.listUninvestigated': store.Schemas.listUninvestigated,
   'store.query': store.Schemas.query,
+  'store.upsertCompany': store.Schemas.upsertCompany,
+  'store.recordLensHit': store.Schemas.recordLensHit,
+  'store.updateScore': store.Schemas.updateScore,
+  'store.saveVerdict': store.Schemas.saveVerdict,
+  'store.getCompany': store.Schemas.getCompany,
+  'store.listCandidates': store.Schemas.listCandidates,
 };
 
 export function withCoercionMetadata(
