@@ -49,7 +49,10 @@ class WebhookEventBus {
           const enrichments = (data.enrichments as Array<Record<string, unknown>> | undefined)
             ?.filter((e) => e.status === 'completed' && (e.result as unknown[] | null)?.length)
             ?.reduce((acc, e) => {
-              acc[e.description as string] = (e.result as unknown[])[0];
+              // Webhook payloads have enrichmentId but not description;
+              // description is only on the webset definition, not on item results
+              const key = (e.description ?? e.enrichmentId ?? 'unknown') as string;
+              acc[key] = (e.result as unknown[])[0];
               return acc;
             }, {} as Record<string, unknown>);
 

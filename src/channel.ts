@@ -139,7 +139,7 @@ async function pushChannelNotification(event: {
   // Extract completed enrichments
   const enrichments = (data.enrichments as Array<Record<string, unknown>> | undefined)
     ?.filter((e) => e.status === 'completed' && (e.result as unknown[] | null)?.length)
-    ?.map((e) => ({ description: e.description, value: (e.result as unknown[])[0] }))
+    ?.map((e) => ({ description: e.description ?? e.enrichmentId ?? 'unknown', value: (e.result as unknown[])[0] }))
     ?? [];
 
   const content = JSON.stringify({

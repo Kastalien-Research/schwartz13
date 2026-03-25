@@ -3,12 +3,15 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
+# Native build tools for better-sqlite3
+RUN apk add --no-cache python3 make g++
+
 # Copy package files
 COPY package*.json ./
 COPY tsconfig.json ./
 
-# Install all dependencies (--ignore-scripts to skip prepare since src/ isn't copied yet)
-RUN npm ci --ignore-scripts
+# Install all dependencies (scripts enabled for native module compilation)
+RUN npm ci
 
 # Copy source code
 COPY src ./src
@@ -24,8 +27,10 @@ WORKDIR /app
 # Copy package files again for production install
 COPY package*.json ./
 
-# Install only production dependencies (--ignore-scripts avoids running prepare/build)
-RUN npm ci --omit=dev --ignore-scripts
+# Native build tools for better-sqlite3
+RUN apk add --no-cache python3 make g++ && \
+    npm ci --omit=dev && \
+    apk del python3 make g++
 
 # Copy built artifacts from builder
 COPY --from=builder /app/dist ./dist
