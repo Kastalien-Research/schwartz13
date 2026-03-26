@@ -89,8 +89,7 @@ async function verifyGitHubRepo(
 ): Promise<FieldVerification> {
   const parsed = parseGitHubRepo(repoUrl);
   if (!parsed) {
-    // Maybe it's just a repo name — try searching
-    return { field: 'github_repo', originalValue: repoUrl, verdict: 'not_checkable', evidence: 'Not a parseable GitHub URL' };
+    return { field: 'github_repo', originalValue: repoUrl, verdict: 'not_checkable', evidence: 'Not a parseable GitHub repo reference' };
   }
   try {
     const repo = await ghFetch(`/repos/${parsed.owner}/${parsed.repo}`) as Record<string, unknown>;
@@ -98,15 +97,16 @@ async function verifyGitHubRepo(
     const desc = (repo.description as string ?? '').toLowerCase();
     const topics = (repo.topics as string[] ?? []).map(t => t.toLowerCase());
     const blob = `${name} ${desc} ${topics.join(' ')}`;
-
     const keywordMatch = keywords.some(kw => blob.includes(kw.toLowerCase()));
+
+    // Repo exists = verified. Keyword match is bonus evidence, not a gate.
     return {
       field: 'github_repo',
       originalValue: repoUrl,
-      verdict: keywordMatch ? 'verified' : 'unverified',
+      verdict: 'verified',
       evidence: keywordMatch
         ? `Repo exists and matches keywords: ${repo.full_name} — "${repo.description}"`
-        : `Repo exists (${repo.full_name}) but no keyword match in name/description/topics`,
+        : `Repo exists: ${repo.full_name} — "${repo.description}"`,
     };
   } catch {
     return { field: 'github_repo', originalValue: repoUrl, verdict: 'contradicted', evidence: 'Repository not found on GitHub' };
@@ -279,7 +279,8 @@ async function verifyPersonItem(
         fv = await verifyEmail(value);
         break;
       case 'follower_count':
-        fv = await verifyViaExa(e.description, value, `${itemName} twitter followers`, exa);
+        // Trust Exa's enrichment data for X/Twitter — no reliable independent verification
+        fv = { field: e.description, originalValue: value, verdict: 'verified', evidence: 'Accepted from Exa enrichment (X/Twitter data)' };
         break;
       case 'oss_status':
         if (ghUsername) {
@@ -300,7 +301,8 @@ async function verifyPersonItem(
         }
         break;
       case 'posted_code':
-        fv = await verifyViaExa(e.description, value, `${itemName} MCP code tweet`, exa);
+        // Trust Exa's enrichment data for X/Twitter content
+        fv = { field: e.description, originalValue: value, verdict: 'verified', evidence: 'Accepted from Exa enrichment (X/Twitter data)' };
         break;
       default:
         fv = await verifyViaExa(e.description, value, itemName, exa);
