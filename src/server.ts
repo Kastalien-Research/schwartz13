@@ -55,16 +55,15 @@ export function createServer(config: ServerConfig): ServerInstance {
     },
   }));
 
-  // DAuth: initialize token validation if a resource URL is configured
-  const dauthEnabled = !!config.resourceUrl;
-  if (dauthEnabled) {
-    initDAuth({
-      resourceUrl: config.resourceUrl!,
-      authServerUrl: config.authServerUrl,
-      requiredScopes: config.requiredScopes,
-      skipValidation: config.skipDAuth,
-    });
-  }
+  // DAuth: always initialize. Resource URL is derived from the request
+  // Host header when not explicitly configured. Set DAUTH_SKIP_VALIDATION=true
+  // for local development to bypass token checks.
+  initDAuth({
+    resourceUrl: config.resourceUrl,
+    authServerUrl: config.authServerUrl,
+    requiredScopes: config.requiredScopes,
+    skipValidation: config.skipDAuth,
+  });
 
   // Health endpoint for Docker healthchecks and k8s probes
   app.get('/health', (_req: Request, res: Response) => {
@@ -73,12 +72,10 @@ export function createServer(config: ServerConfig): ServerInstance {
   });
 
   // OAuth Protected Resource Metadata (RFC 9728)
-  if (dauthEnabled) {
-    app.get(
-      '/.well-known/oauth-protected-resource',
-      protectedResourceMetadata,
-    );
-  }
+  app.get(
+    '/.well-known/oauth-protected-resource',
+    protectedResourceMetadata,
+  );
 
   // Webhook receiver for Exa webhook events + SSE stream for channel bridges
   app.use(createWebhookRouter(config.webhookSecret));
@@ -117,10 +114,8 @@ export function createServer(config: ServerConfig): ServerInstance {
     }
   };
 
-  // DAuth: require Bearer token on /mcp when enabled
-  if (dauthEnabled) {
-    app.use('/mcp', requireDAuth);
-  }
+  // DAuth: require Bearer token on /mcp
+  app.use('/mcp', requireDAuth);
 
   app.all("/mcp", async (req: Request, res: Response) => {
     const sessionId = req.headers["mcp-session-id"] as string | undefined;
