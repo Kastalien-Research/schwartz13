@@ -9,8 +9,11 @@ import type { Request, Response, NextFunction } from 'express';
 import { createRemoteJWKSet, jwtVerify, type JWTPayload } from 'jose';
 
 export interface DAuthConfig {
-  /** The public URL of this MCP server (used as the OAuth resource identifier) */
-  resourceUrl: string;
+  /**
+   * The public URL of this MCP server (used as the OAuth resource identifier).
+   * When omitted, derived at runtime from the request's Host header.
+   */
+  resourceUrl?: string;
   /** DAuth authorization server URL. Defaults to https://as.dedaluslabs.ai */
   authServerUrl?: string;
   /** Required scopes for all requests. Defaults to [] (no scope requirement) */
@@ -22,7 +25,7 @@ export interface DAuthConfig {
 interface DAuthState {
   jwks: ReturnType<typeof createRemoteJWKSet>;
   issuer: string;
-  resourceUrl: string;
+  resourceUrl: string | null;
   requiredScopes: string[];
   skipValidation: boolean;
 }
@@ -36,10 +39,18 @@ export function initDAuth(config: DAuthConfig): void {
   state = {
     jwks: createRemoteJWKSet(jwksUrl),
     issuer: authServerUrl,
-    resourceUrl: config.resourceUrl,
+    resourceUrl: config.resourceUrl ?? null,
     requiredScopes: config.requiredScopes ?? [],
     skipValidation: config.skipValidation ?? false,
   };
+}
+
+/** Derive the resource URL from the request if not explicitly configured */
+function getResourceUrl(req: Request): string {
+  if (state?.resourceUrl) return state.resourceUrl;
+  const proto = req.headers['x-forwarded-proto'] ?? req.protocol ?? 'https';
+  const host = req.headers['x-forwarded-host'] ?? req.headers.host ?? 'localhost';
+  return `${proto}://${host}`;
 }
 
 /**
@@ -47,7 +58,7 @@ export function initDAuth(config: DAuthConfig): void {
  * Mount at: GET /.well-known/oauth-protected-resource
  */
 export function protectedResourceMetadata(
-  _req: Request,
+  req: Request,
   res: Response,
 ): void {
   if (!state) {
@@ -55,8 +66,9 @@ export function protectedResourceMetadata(
     return;
   }
 
+  const resourceUrl = getResourceUrl(req);
   res.json({
-    resource: state.resourceUrl,
+    resource: resourceUrl,
     authorization_servers: [state.issuer],
     scopes_supported: state.requiredScopes.length > 0
       ? state.requiredScopes
@@ -89,9 +101,10 @@ export async function requireDAuth(
     return;
   }
 
+  const resourceUrl = getResourceUrl(req);
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    const metadataUrl = `${state.resourceUrl}/.well-known/oauth-protected-resource`;
+    const metadataUrl = `${resourceUrl}/.well-known/oauth-protected-resource`;
     const scopeParam = state.requiredScopes.length > 0
       ? `, scope="${state.requiredScopes.join(' ')}"`
       : '';
@@ -114,7 +127,7 @@ export async function requireDAuth(
   try {
     const { payload } = await jwtVerify(token, state.jwks, {
       issuer: state.issuer,
-      audience: state.resourceUrl,
+      audience: resourceUrl,
     });
 
     // Check required scopes
@@ -124,7 +137,7 @@ export async function requireDAuth(
         (s) => !tokenScopes.has(s),
       );
       if (missing.length > 0) {
-        const metadataUrl = `${state.resourceUrl}/.well-known/oauth-protected-resource`;
+        const metadataUrl = `${resourceUrl}/.well-known/oauth-protected-resource`;
         res
           .status(403)
           .set(
