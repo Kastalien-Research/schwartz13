@@ -13,6 +13,7 @@ import * as events from '../handlers/events.js';
 import * as tasks from '../handlers/tasks.js';
 import * as research from '../handlers/research.js';
 import * as exaSearch from '../handlers/exa.js';
+import * as github from '../handlers/github.js';
 import * as store from '../store/operations.js';
 import { applyCompatCoercions, type AppliedCoercion, type CompatMode } from './coercion.js';
 
@@ -92,6 +93,11 @@ export const OPERATIONS: Record<string, OperationMeta> = {
   'exa.findSimilar': { handler: exaSearch.findSimilar, summary: 'Find pages similar to a URL' },
   'exa.getContents': { handler: exaSearch.getContents, summary: 'Extract content from URLs' },
   'exa.answer': { handler: exaSearch.answer, summary: 'Question answering with citations' },
+  'github.getUser': { handler: github.getUser, summary: 'Get GitHub user profile' },
+  'github.getUserRepos': { handler: github.getUserRepos, summary: 'List user repos (sorted by updated/created/pushed)' },
+  'github.getRepo': { handler: github.getRepo, summary: 'Get a specific repo by owner/name' },
+  'github.getUserLanguages': { handler: github.getUserLanguages, summary: 'Get primary language from user repos' },
+  'github.verifyProfile': { handler: github.verifyProfile, summary: 'Verify GitHub profile exists with summary data' },
   'store.annotate': { handler: store.annotate, summary: 'Annotate a local item (judgment, tag, note)' },
   'store.getItem': { handler: store.getItem, summary: 'Get item with annotations from local store' },
   'store.listUninvestigated': { handler: store.listUninvestigated, summary: 'List items without judgment annotations' },
@@ -167,6 +173,11 @@ export const OPERATION_SCHEMAS: Record<string, z.ZodTypeAny> = {
   'exa.findSimilar': exaSearch.Schemas.findSimilar,
   'exa.getContents': exaSearch.Schemas.getContents,
   'exa.answer': exaSearch.Schemas.answer,
+  'github.getUser': github.Schemas.getUser,
+  'github.getUserRepos': github.Schemas.getUserRepos,
+  'github.getRepo': github.Schemas.getRepo,
+  'github.getUserLanguages': github.Schemas.getUserLanguages,
+  'github.verifyProfile': github.Schemas.verifyProfile,
   'store.annotate': store.Schemas.annotate,
   'store.getItem': store.Schemas.getItem,
   'store.listUninvestigated': store.Schemas.listUninvestigated,

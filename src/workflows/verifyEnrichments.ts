@@ -1,0 +1,517 @@
+import type { Exa } from 'exa-js';
+import type { TaskStore } from '../lib/taskStore.js';
+import { Semaphore } from '../lib/semaphore.js';
+import { registerWorkflow } from './types.js';
+import {
+  createStepTracker,
+  isCancelled,
+  collectItems,
+  withSummary,
+} from './helpers.js';
+import { projectItem } from '../lib/projections.js';
+import { checkEmail } from '../lib/emailCheck.js';
+
+// --- Types ---
+
+type Verdict = 'verified' | 'unverified' | 'contradicted' | 'not_checkable';
+
+interface FieldVerification {
+  field: string;
+  originalValue: unknown;
+  verdict: Verdict;
+  evidence?: string;
+}
+
+interface ItemVerification {
+  item: Record<string, unknown>;
+  fields: FieldVerification[];
+  score: number; // 0-1 ratio of verified fields
+}
+
+// --- GitHub URL parsing ---
+
+function parseGitHubUsername(url: string): string | null {
+  try {
+    const u = new URL(url);
+    if (!u.hostname.includes('github.com')) return null;
+    const parts = u.pathname.split('/').filter(Boolean);
+    return parts[0] ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function parseGitHubRepo(url: string): { owner: string; repo: string } | null {
+  try {
+    const u = new URL(url);
+    if (!u.hostname.includes('github.com')) return null;
+    const parts = u.pathname.split('/').filter(Boolean);
+    if (parts.length < 2) return null;
+    return { owner: parts[0], repo: parts[1] };
+  } catch {
+    return null;
+  }
+}
+
+// --- Verification strategies per enrichment type ---
+
+async function verifyGitHubUrl(
+  url: string,
+  ghFetch: (path: string) => Promise<unknown>,
+): Promise<FieldVerification> {
+  const username = parseGitHubUsername(url);
+  if (!username) {
+    return { field: 'github_url', originalValue: url, verdict: 'unverified', evidence: 'Not a valid GitHub URL' };
+  }
+  try {
+    const user = await ghFetch(`/users/${username}`) as Record<string, unknown>;
+    return {
+      field: 'github_url',
+      originalValue: url,
+      verdict: 'verified',
+      evidence: `Profile exists: ${user.login} (${user.public_repos} repos, ${user.followers} followers)`,
+    };
+  } catch {
+    return { field: 'github_url', originalValue: url, verdict: 'contradicted', evidence: 'GitHub profile not found' };
+  }
+}
+
+async function verifyGitHubRepo(
+  repoUrl: string,
+  ghFetch: (path: string) => Promise<unknown>,
+  keywords: string[] = ['mcp'],
+): Promise<FieldVerification> {
+  const parsed = parseGitHubRepo(repoUrl);
+  if (!parsed) {
+    // Maybe it's just a repo name — try searching
+    return { field: 'github_repo', originalValue: repoUrl, verdict: 'not_checkable', evidence: 'Not a parseable GitHub URL' };
+  }
+  try {
+    const repo = await ghFetch(`/repos/${parsed.owner}/${parsed.repo}`) as Record<string, unknown>;
+    const name = (repo.full_name as string ?? '').toLowerCase();
+    const desc = (repo.description as string ?? '').toLowerCase();
+    const topics = (repo.topics as string[] ?? []).map(t => t.toLowerCase());
+    const blob = `${name} ${desc} ${topics.join(' ')}`;
+
+    const keywordMatch = keywords.some(kw => blob.includes(kw.toLowerCase()));
+    return {
+      field: 'github_repo',
+      originalValue: repoUrl,
+      verdict: keywordMatch ? 'verified' : 'unverified',
+      evidence: keywordMatch
+        ? `Repo exists and matches keywords: ${repo.full_name} — "${repo.description}"`
+        : `Repo exists (${repo.full_name}) but no keyword match in name/description/topics`,
+    };
+  } catch {
+    return { field: 'github_repo', originalValue: repoUrl, verdict: 'contradicted', evidence: 'Repository not found on GitHub' };
+  }
+}
+
+async function verifyLanguage(
+  claimed: string,
+  username: string,
+  ghFetch: (path: string) => Promise<unknown>,
+): Promise<FieldVerification> {
+  try {
+    const repos = await ghFetch(
+      `/users/${username}/repos?per_page=30&sort=pushed&type=owner`,
+    ) as Array<Record<string, unknown>>;
+
+    const langCount: Record<string, number> = {};
+    for (const r of repos) {
+      const lang = r.language as string | null;
+      if (lang) langCount[lang] = (langCount[lang] ?? 0) + 1;
+    }
+    const sorted = Object.entries(langCount).sort((a, b) => b[1] - a[1]);
+    const topLangs = sorted.slice(0, 3).map(([l]) => l);
+
+    const match = topLangs.some(l => l.toLowerCase() === claimed.toLowerCase());
+    return {
+      field: 'primary_language',
+      originalValue: claimed,
+      verdict: match ? 'verified' : 'unverified',
+      evidence: match
+        ? `"${claimed}" is in top 3 languages: ${topLangs.join(', ')}`
+        : `Top languages are ${topLangs.join(', ')} — "${claimed}" not found`,
+    };
+  } catch {
+    return { field: 'primary_language', originalValue: claimed, verdict: 'not_checkable', evidence: 'Could not fetch repos' };
+  }
+}
+
+async function verifyEmail(email: string): Promise<FieldVerification> {
+  const result = await checkEmail(email);
+  if (!result.formatValid) {
+    return { field: 'email', originalValue: email, verdict: 'contradicted', evidence: 'Invalid email format' };
+  }
+  if (result.domainHasMx) {
+    return { field: 'email', originalValue: email, verdict: 'verified', evidence: `Domain has MX records: ${result.mxRecords[0]}` };
+  }
+  return { field: 'email', originalValue: email, verdict: 'unverified', evidence: 'Domain has no MX records' };
+}
+
+async function verifyViaExa(
+  field: string,
+  value: string,
+  context: string,
+  exa: Exa,
+): Promise<FieldVerification> {
+  try {
+    const query = `${context} ${value}`;
+    const results = await exa.search(query, {
+      numResults: 3,
+      type: 'auto',
+      contents: { highlights: true },
+    });
+    const hits = (results as any).results ?? [];
+    if (hits.length === 0) {
+      return { field, originalValue: value, verdict: 'unverified', evidence: 'No corroborating results found via web search' };
+    }
+
+    // Check if any highlights mention the value
+    const allHighlights = hits.flatMap((h: any) => h.highlights ?? []).join(' ').toLowerCase();
+    const valueLower = value.toLowerCase();
+    const found = allHighlights.includes(valueLower) || hits.some((h: any) =>
+      (h.title ?? '').toLowerCase().includes(valueLower) ||
+      (h.url ?? '').toLowerCase().includes(valueLower)
+    );
+
+    return {
+      field,
+      originalValue: value,
+      verdict: found ? 'verified' : 'unverified',
+      evidence: found
+        ? `Found corroborating mention in ${hits.length} search results`
+        : `${hits.length} results returned but none mention "${value}"`,
+    };
+  } catch {
+    return { field, originalValue: value, verdict: 'not_checkable', evidence: 'Exa search failed' };
+  }
+}
+
+// --- Entity-specific verification strategies ---
+
+interface EnrichmentSpec {
+  description: string;
+  result: string[] | null;
+  format?: string;
+}
+
+function classifyEnrichment(desc: string): string {
+  const d = desc.toLowerCase();
+  if (d.includes('github') && (d.includes('profile') || d.includes('url'))) return 'github_url';
+  if (d.includes('github') && d.includes('repo')) return 'github_repo';
+  if (d.includes('language') || d.includes('programming')) return 'primary_language';
+  if (d.includes('email')) return 'email';
+  if (d.includes('follower')) return 'follower_count';
+  if (d.includes('oss') || d.includes('open source') || d.includes('contributor')) return 'oss_status';
+  if (d.includes('posted') && (d.includes('code') || d.includes('repo'))) return 'posted_code';
+  return 'general';
+}
+
+async function verifyPersonItem(
+  item: Record<string, unknown>,
+  enrichments: EnrichmentSpec[],
+  exa: Exa,
+  ghFetch: (path: string) => Promise<unknown>,
+): Promise<FieldVerification[]> {
+  const results: FieldVerification[] = [];
+  const props = item.properties as Record<string, unknown> | undefined;
+  const person = props?.person as Record<string, unknown> | undefined;
+  const itemName = (person?.name ?? props?.description ?? 'unknown') as string;
+  const itemUrl = (props?.url ?? '') as string;
+
+  // Verify the source URL is live
+  if (itemUrl) {
+    try {
+      const contents = await exa.getContents(itemUrl, { text: true } as any);
+      const pageResults = (contents as any).results ?? [];
+      const hasContent = pageResults.length > 0 && pageResults[0].text?.length > 50;
+      results.push({
+        field: 'source_url',
+        originalValue: itemUrl,
+        verdict: hasContent ? 'verified' : 'unverified',
+        evidence: hasContent ? 'Source URL is live and has content' : 'Source URL returned no meaningful content',
+      });
+    } catch {
+      results.push({ field: 'source_url', originalValue: itemUrl, verdict: 'unverified', evidence: 'Could not fetch source URL' });
+    }
+  }
+
+  // Find GitHub username from enrichments for cross-referencing
+  let ghUsername: string | null = null;
+  for (const e of enrichments) {
+    if (classifyEnrichment(e.description) === 'github_url' && e.result?.[0]) {
+      ghUsername = parseGitHubUsername(e.result[0]);
+      break;
+    }
+  }
+
+  // Verify each enrichment
+  for (const e of enrichments) {
+    const value = e.result?.[0];
+    if (!value || value.trim() === '') {
+      results.push({ field: e.description, originalValue: null, verdict: 'not_checkable', evidence: 'No value to verify' });
+      continue;
+    }
+
+    const type = classifyEnrichment(e.description);
+    switch (type) {
+      case 'github_url':
+        results.push(await verifyGitHubUrl(value, ghFetch));
+        break;
+      case 'github_repo':
+        results.push(await verifyGitHubRepo(value, ghFetch));
+        break;
+      case 'primary_language':
+        if (ghUsername) {
+          results.push(await verifyLanguage(value, ghUsername, ghFetch));
+        } else {
+          results.push(await verifyViaExa(e.description, value, `${itemName} programming language`, exa));
+        }
+        break;
+      case 'email':
+        results.push(await verifyEmail(value));
+        break;
+      case 'follower_count':
+        // Best-effort via Exa — we can't get live Twitter counts
+        results.push(await verifyViaExa(e.description, value, `${itemName} twitter followers`, exa));
+        break;
+      case 'oss_status':
+        if (ghUsername) {
+          try {
+            const user = await ghFetch(`/users/${ghUsername}`) as Record<string, unknown>;
+            const repoCount = user.public_repos as number ?? 0;
+            results.push({
+              field: e.description,
+              originalValue: value,
+              verdict: repoCount > 0 ? 'verified' : 'unverified',
+              evidence: `${ghUsername} has ${repoCount} public repos`,
+            });
+          } catch {
+            results.push({ field: e.description, originalValue: value, verdict: 'not_checkable', evidence: 'Could not check GitHub' });
+          }
+        } else {
+          results.push(await verifyViaExa(e.description, value, `${itemName} open source contributions`, exa));
+        }
+        break;
+      case 'posted_code':
+        // Use Exa tweet search for this
+        results.push(await verifyViaExa(e.description, value, `${itemName} MCP code tweet`, exa));
+        break;
+      default:
+        results.push(await verifyViaExa(e.description, value, itemName, exa));
+    }
+  }
+
+  return results;
+}
+
+async function verifyCompanyItem(
+  item: Record<string, unknown>,
+  enrichments: EnrichmentSpec[],
+  exa: Exa,
+  ghFetch: (path: string) => Promise<unknown>,
+): Promise<FieldVerification[]> {
+  const results: FieldVerification[] = [];
+  const props = item.properties as Record<string, unknown> | undefined;
+  const company = props?.company as Record<string, unknown> | undefined;
+  const itemName = (company?.name ?? props?.description ?? 'unknown') as string;
+  const itemUrl = (props?.url ?? '') as string;
+
+  // Verify source URL
+  if (itemUrl) {
+    try {
+      const contents = await exa.getContents(itemUrl, { text: true } as any);
+      const pageResults = (contents as any).results ?? [];
+      const hasContent = pageResults.length > 0 && pageResults[0].text?.length > 50;
+      results.push({
+        field: 'source_url',
+        originalValue: itemUrl,
+        verdict: hasContent ? 'verified' : 'unverified',
+        evidence: hasContent ? 'Company URL is live' : 'Company URL returned no meaningful content',
+      });
+    } catch {
+      results.push({ field: 'source_url', originalValue: itemUrl, verdict: 'unverified', evidence: 'Could not fetch company URL' });
+    }
+  }
+
+  for (const e of enrichments) {
+    const value = e.result?.[0];
+    if (!value || value.trim() === '') {
+      results.push({ field: e.description, originalValue: null, verdict: 'not_checkable', evidence: 'No value to verify' });
+      continue;
+    }
+
+    const type = classifyEnrichment(e.description);
+    switch (type) {
+      case 'github_url':
+        results.push(await verifyGitHubUrl(value, ghFetch));
+        break;
+      case 'github_repo':
+        results.push(await verifyGitHubRepo(value, ghFetch));
+        break;
+      case 'email':
+        results.push(await verifyEmail(value));
+        break;
+      default:
+        results.push(await verifyViaExa(e.description, value, `${itemName} company`, exa));
+    }
+  }
+
+  return results;
+}
+
+// --- Main Workflow ---
+
+const GITHUB_API_BASE = 'https://api.github.com';
+
+async function verifyEnrichmentsWorkflow(
+  taskId: string,
+  args: Record<string, unknown>,
+  exa: Exa,
+  store: TaskStore,
+): Promise<unknown> {
+  const startTime = Date.now();
+  const tracker = createStepTracker();
+
+  const websetId = args.websetId as string;
+  if (!websetId) throw new Error('websetId is required');
+
+  const maxItems = (args.maxItems as number) ?? 50;
+  const concurrency = (args.concurrency as number) ?? 3;
+  const keywords = (args.keywords as string[]) ?? ['mcp'];
+
+  // Build ghFetch with optional token
+  const ghHeaders: Record<string, string> = {
+    'Accept': 'application/vnd.github+json',
+    'User-Agent': 'schwartz13-mcp',
+  };
+  const ghToken = process.env.GITHUB_TOKEN;
+  if (ghToken) ghHeaders['Authorization'] = `Bearer ${ghToken}`;
+
+  async function ghFetch(path: string): Promise<unknown> {
+    const res = await fetch(`${GITHUB_API_BASE}${path}`, { headers: ghHeaders });
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      throw new Error(`GitHub ${res.status}: ${body.slice(0, 200)}`);
+    }
+    return res.json();
+  }
+
+  // Step 1: Get webset metadata to determine entity type
+  const step1 = Date.now();
+  store.updateProgress(taskId, { step: 'loading webset', completed: 1, total: 4 });
+
+  const webset = await exa.websets.get(websetId) as any;
+  const searches = webset.searches as any[] ?? [];
+  const entityType = searches[0]?.entity?.type ?? 'unknown';
+  tracker.track('load_webset', step1);
+
+  if (isCancelled(taskId, store)) return null;
+
+  // Step 2: Collect items
+  const step2 = Date.now();
+  store.updateProgress(taskId, { step: 'collecting items', completed: 2, total: 4 });
+
+  const allItems = await collectItems(exa, websetId, maxItems);
+  tracker.track('collect', step2);
+
+  if (allItems.length === 0) {
+    return withSummary({ websetId, entityType, items: [], totalVerified: 0 },
+      'No items found in webset');
+  }
+
+  if (isCancelled(taskId, store)) return null;
+
+  // Step 3: Verify each item
+  const step3 = Date.now();
+  store.updateProgress(taskId, {
+    step: 'verifying',
+    completed: 3,
+    total: 4,
+    message: `Verifying ${allItems.length} items (${entityType})`,
+  });
+
+  const semaphore = new Semaphore(concurrency);
+  const verifications: ItemVerification[] = await Promise.all(
+    allItems.map((item, idx) =>
+      semaphore.run(async () => {
+        if (isCancelled(taskId, store)) {
+          return { item: projectItem(item), fields: [], score: 0 };
+        }
+
+        const enrichments = (item.enrichments as Array<Record<string, unknown>> ?? []).map(e => ({
+          description: (e.description as string) ?? '',
+          result: (e.result as string[] | null),
+          format: e.format as string | undefined,
+        }));
+
+        let fields: FieldVerification[];
+        if (entityType === 'person') {
+          fields = await verifyPersonItem(item, enrichments, exa, ghFetch);
+        } else if (entityType === 'company') {
+          fields = await verifyCompanyItem(item, enrichments, exa, ghFetch);
+        } else {
+          // Generic: use Exa for everything
+          fields = [];
+          const props = item.properties as Record<string, unknown> | undefined;
+          const itemName = (props?.description ?? 'unknown') as string;
+          for (const e of enrichments) {
+            const value = e.result?.[0];
+            if (!value) {
+              fields.push({ field: e.description, originalValue: null, verdict: 'not_checkable', evidence: 'No value' });
+            } else if (classifyEnrichment(e.description) === 'email') {
+              fields.push(await verifyEmail(value));
+            } else {
+              fields.push(await verifyViaExa(e.description, value, itemName, exa));
+            }
+          }
+        }
+
+        const checkable = fields.filter(f => f.verdict !== 'not_checkable');
+        const verified = checkable.filter(f => f.verdict === 'verified').length;
+        const score = checkable.length > 0 ? verified / checkable.length : 0;
+
+        store.updateProgress(taskId, {
+          step: 'verifying',
+          completed: 3,
+          total: 4,
+          message: `Verified ${idx + 1}/${allItems.length}`,
+        });
+
+        return { item: projectItem(item), fields, score };
+      }),
+    ),
+  );
+  tracker.track('verify', step3);
+
+  // Step 4: Summarize
+  store.updateProgress(taskId, { step: 'summarizing', completed: 4, total: 4 });
+
+  const avgScore = verifications.reduce((sum, v) => sum + v.score, 0) / verifications.length;
+
+  // Per-field summary
+  const fieldStats: Record<string, Record<Verdict, number>> = {};
+  for (const v of verifications) {
+    for (const f of v.fields) {
+      if (!fieldStats[f.field]) fieldStats[f.field] = { verified: 0, unverified: 0, contradicted: 0, not_checkable: 0 };
+      fieldStats[f.field][f.verdict]++;
+    }
+  }
+
+  const duration = Date.now() - startTime;
+
+  return withSummary({
+    websetId,
+    entityType,
+    totalItems: verifications.length,
+    averageVerificationScore: Math.round(avgScore * 100) / 100,
+    fieldStats,
+    items: verifications,
+    duration,
+    steps: tracker.steps,
+  }, `${verifications.length} items verified (avg score: ${(avgScore * 100).toFixed(0)}%) in ${(duration / 1000).toFixed(0)}s`);
+}
+
+registerWorkflow('verify.enrichments', verifyEnrichmentsWorkflow);
