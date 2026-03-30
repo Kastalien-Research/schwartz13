@@ -1,6 +1,6 @@
 import type { Exa } from 'exa-js';
 import type { TaskStore } from '../lib/taskStore.js';
-import { registerWorkflow } from './types.js';
+import { registerWorkflow, type WorkflowMeta } from './types.js';
 import {
   createStepTracker,
   isCancelled,
@@ -116,4 +116,30 @@ async function lifecycleHarvestWorkflow(
   return withSummary(result, `Harvested ${projected.included} items (${projected.excluded} excluded) from webset ${websetId} (${enrichmentCount} enrichments) in ${(duration / 1000).toFixed(0)}s`);
 }
 
-registerWorkflow('lifecycle.harvest', lifecycleHarvestWorkflow);
+const meta: WorkflowMeta = {
+  title: 'Lifecycle Harvest',
+  description: 'The foundational create-poll-collect webset lifecycle. Creates a webset with search criteria and enrichments, waits for completion, and returns all items. The pattern that more complex workflows build on.',
+  category: 'lifecycle',
+  parameters: [
+    { name: 'query', type: 'string', required: true, description: 'Natural language search query' },
+    { name: 'entity', type: 'object', required: true, description: 'Entity type: { type: "company" | "person" | "article" }' },
+    { name: 'criteria', type: 'array', required: false, description: 'Filtering criteria for the search' },
+    { name: 'enrichments', type: 'array', required: false, description: 'Enrichments to add to the webset' },
+    { name: 'count', type: 'number', required: false, description: 'Max search results', default: 25 },
+    { name: 'cleanup', type: 'boolean', required: false, description: 'Delete webset after collecting items', default: false },
+    { name: 'timeout', type: 'number', required: false, description: 'Timeout in milliseconds', default: 300000 },
+  ],
+  steps: [
+    'Validate query and entity type',
+    'Create webset with search criteria and enrichments',
+    'Poll until webset is idle or timeout',
+    'Collect all items from the webset',
+    'Optionally delete the webset (cleanup)',
+  ],
+  output: 'Webset ID, projected items, item count, items excluded, search progress, enrichment count, and duration.',
+  example: `await callOperation('tasks.create', {\n  type: 'lifecycle.harvest',\n  args: {\n    query: 'AI startups in San Francisco',\n    entity: { type: 'company' },\n    criteria: [{ description: 'Founded after 2020' }],\n    enrichments: [{ description: 'Number of employees', format: 'number' }],\n    count: 25,\n  }\n});`,
+  relatedWorkflows: ['qd.winnow', 'convergent.search', 'verify.enrichments'],
+  tags: ['lifecycle', 'harvest', 'collect', 'webset', 'foundational', 'create-poll-collect'],
+};
+
+registerWorkflow('lifecycle.harvest', lifecycleHarvestWorkflow, meta);

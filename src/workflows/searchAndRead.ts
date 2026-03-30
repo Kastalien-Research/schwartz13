@@ -1,6 +1,6 @@
 import type { Exa } from 'exa-js';
 import type { TaskStore } from '../lib/taskStore.js';
-import { registerWorkflow } from './types.js';
+import { registerWorkflow, type WorkflowMeta } from './types.js';
 import { isCancelled, validateRequired, withSummary } from './helpers.js';
 
 async function searchAndReadWorkflow(
@@ -64,4 +64,31 @@ async function searchAndReadWorkflow(
   }, `Searched "${query}" → ${results.length} results, read ${contents.length} pages in ${(duration / 1000).toFixed(1)}s`);
 }
 
-registerWorkflow('retrieval.searchAndRead', searchAndReadWorkflow);
+const meta: WorkflowMeta = {
+  title: 'Search and Read',
+  description: 'Search the web and read page contents in one step. Uses Exa search API to find results, then fetches full text and highlights for each page. Good for quick fact-finding.',
+  category: 'retrieval',
+  parameters: [
+    { name: 'query', type: 'string', required: true, description: 'Search query string' },
+    { name: 'numResults', type: 'number', required: false, description: 'Number of results to return', default: 5 },
+    { name: 'type', type: 'string', required: false, description: 'Search type filter' },
+    { name: 'category', type: 'string', required: false, description: 'Content category filter' },
+    { name: 'includeDomains', type: 'array', required: false, description: 'Only include results from these domains' },
+    { name: 'excludeDomains', type: 'array', required: false, description: 'Exclude results from these domains' },
+    { name: 'startCrawlDate', type: 'string', required: false, description: 'Only include pages crawled after this date' },
+    { name: 'endCrawlDate', type: 'string', required: false, description: 'Only include pages crawled before this date' },
+    { name: 'startPublishedDate', type: 'string', required: false, description: 'Only include pages published after this date' },
+    { name: 'endPublishedDate', type: 'string', required: false, description: 'Only include pages published before this date' },
+  ],
+  steps: [
+    'Search using Exa search API with query and filters',
+    'Fetch full text content and highlights for each result',
+    'Return results with page contents',
+  ],
+  output: 'Search results with titles, URLs, scores, plus full page text excerpts and highlights for each result.',
+  example: `await callOperation('tasks.create', {\n  type: 'retrieval.searchAndRead',\n  args: {\n    query: 'latest developments in quantum computing',\n    numResults: 5,\n    startPublishedDate: '2024-01-01',\n  }\n});`,
+  relatedWorkflows: ['retrieval.expandAndCollect', 'retrieval.verifiedAnswer'],
+  tags: ['search', 'read', 'contents', 'highlights', 'web', 'quick'],
+};
+
+registerWorkflow('retrieval.searchAndRead', searchAndReadWorkflow, meta);

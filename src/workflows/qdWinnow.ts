@@ -1,6 +1,6 @@
 import type { Exa } from 'exa-js';
 import type { TaskStore } from '../lib/taskStore.js';
-import { registerWorkflow } from './types.js';
+import { registerWorkflow, type WorkflowMeta } from './types.js';
 import {
   type StepTiming,
   createStepTracker,
@@ -450,4 +450,35 @@ Assess:
 }
 
 // Register
-registerWorkflow('qd.winnow', qdWinnowWorkflow);
+const meta: WorkflowMeta = {
+  title: 'Quality-Diversity Winnow',
+  description: 'Search for entities matching criteria, classify them into quality-diversity niches based on criteria satisfaction patterns, score by enrichment quality, and select elite representatives. Inspired by MAP-Elites: instead of finding the single best result, find the best in each behavioral niche.',
+  category: 'analysis',
+  parameters: [
+    { name: 'query', type: 'string', required: false, description: 'Search query (required unless seedWebsetId is provided)' },
+    { name: 'entity', type: 'object', required: true, description: 'Entity type: { type: "company" | "person" | "article" }' },
+    { name: 'criteria', type: 'array', required: true, description: 'Filtering criteria with descriptions', constraints: '1-10 items' },
+    { name: 'enrichments', type: 'array', required: true, description: 'Data to extract per entity (description, format, options)' },
+    { name: 'count', type: 'number', required: false, description: 'Max results to search for', default: 50 },
+    { name: 'seedWebsetId', type: 'string', required: false, description: 'Append to existing webset instead of creating new' },
+    { name: 'selectionStrategy', type: 'enum', required: false, description: 'Elite selection strategy: all-criteria, any-criteria, or diverse', default: 'diverse' },
+    { name: 'critique', type: 'boolean', required: false, description: 'Run Exa Research API critique on results', default: false },
+    { name: 'timeout', type: 'number', required: false, description: 'Timeout in milliseconds', default: 300000 },
+  ],
+  steps: [
+    'Validate parameters and entity type',
+    'Create webset with search criteria and enrichments (or append to seed)',
+    'Poll until webset is idle or timeout',
+    'Collect all items from the webset',
+    'Classify items into criteria niches (binary vector per criterion)',
+    'Score fitness based on enrichment quality',
+    'Select elite items based on strategy',
+    'Compute quality metrics (coverage, diversity, stringency)',
+    'Optionally run Research API critique on results',
+  ],
+  output: 'Webset ID, niche distribution map, elite items (projected) with fitness scores, quality metrics (coverage, avgFitness, diversity, stringency), per-criterion descriptor feedback, and optional critique.',
+  example: `await callOperation('tasks.create', {\n  type: 'qd.winnow',\n  args: {\n    query: 'AI startups building developer tools',\n    entity: { type: 'company' },\n    criteria: [\n      { description: 'Has a publicly available product or beta' },\n      { description: 'Founded after 2020' },\n      { description: 'Focuses on developer experience' },\n    ],\n    enrichments: [\n      { description: 'Number of employees', format: 'number' },\n      { description: 'Primary product category', format: 'options', options: [{ label: 'IDE' }, { label: 'CI/CD' }, { label: 'Testing' }, { label: 'Other' }] },\n    ],\n    selectionStrategy: 'diverse',\n  }\n});`,
+  relatedWorkflows: ['lifecycle.harvest', 'convergent.search', 'verify.enrichments'],
+  tags: ['quality', 'diversity', 'niche', 'classification', 'elite', 'ranking', 'map-elites', 'winnow'],
+};
+registerWorkflow('qd.winnow', qdWinnowWorkflow, meta);

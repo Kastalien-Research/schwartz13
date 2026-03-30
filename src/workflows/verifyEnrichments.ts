@@ -1,7 +1,7 @@
 import type { Exa } from 'exa-js';
 import type { TaskStore } from '../lib/taskStore.js';
 import { Semaphore } from '../lib/semaphore.js';
-import { registerWorkflow } from './types.js';
+import { registerWorkflow, type WorkflowMeta } from './types.js';
 import {
   createStepTracker,
   isCancelled,
@@ -583,4 +583,26 @@ async function verifyEnrichmentsWorkflow(
   }, `${verifications.length} items verified (avg score: ${(avgScore * 100).toFixed(0)}%) in ${(duration / 1000).toFixed(0)}s`);
 }
 
-registerWorkflow('verify.enrichments', verifyEnrichmentsWorkflow);
+const meta: WorkflowMeta = {
+  title: 'Verify Enrichments',
+  description: 'Independently verify the enrichment data on a webset\'s items. Uses GitHub API for profile/repo verification, DNS MX checks for emails, and Exa search for general corroboration. Produces per-field verdicts and persists results to SQLite.',
+  category: 'verification',
+  parameters: [
+    { name: 'websetId', type: 'string', required: true, description: 'ID of the webset whose items to verify' },
+    { name: 'maxItems', type: 'number', required: false, description: 'Maximum items to verify', default: 50 },
+    { name: 'concurrency', type: 'number', required: false, description: 'Parallel verification limit', default: 10 },
+    { name: 'keywords', type: 'array', required: false, description: 'Keywords for GitHub repo relevance checking', default: ['mcp'] },
+  ],
+  steps: [
+    'Load webset metadata to determine entity type and enrichment definitions',
+    'Collect items from the webset',
+    'Verify each item using entity-type-specific strategies (GitHub API, MX checks, Exa search)',
+    'Summarize results with per-field statistics and average verification scores',
+  ],
+  output: 'Webset ID, entity type, total items verified, average verification score (0-1), per-field statistics (verified/unverified/contradicted/not_checkable counts), and per-item detailed verdicts with evidence.',
+  example: `await callOperation('tasks.create', {\n  type: 'verify.enrichments',\n  args: {\n    websetId: 'ws_abc123',\n    maxItems: 25,\n    concurrency: 5,\n  }\n});`,
+  relatedWorkflows: ['lifecycle.harvest', 'qd.winnow'],
+  tags: ['verify', 'enrichments', 'quality', 'github', 'email', 'fact-check', 'verdicts'],
+};
+
+registerWorkflow('verify.enrichments', verifyEnrichmentsWorkflow, meta);

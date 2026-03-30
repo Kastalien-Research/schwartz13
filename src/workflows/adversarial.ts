@@ -1,6 +1,6 @@
 import type { Exa } from 'exa-js';
 import type { TaskStore } from '../lib/taskStore.js';
-import { registerWorkflow } from './types.js';
+import { registerWorkflow, type WorkflowMeta } from './types.js';
 import {
   createStepTracker,
   isCancelled,
@@ -183,4 +183,32 @@ Provide a balanced assessment including: verdict, confidence level, key supporti
   return withSummary(result, `Thesis: ${projectedThesis.included} items, Antithesis: ${projectedAntithesis.included} items${synthLabel} in ${(duration / 1000).toFixed(0)}s`);
 }
 
-registerWorkflow('adversarial.verify', adversarialVerifyWorkflow);
+const meta: WorkflowMeta = {
+  title: 'Adversarial Verification',
+  description: 'Test a hypothesis by gathering evidence for and against it in parallel. Creates two websets — one for supporting evidence (thesis), one for counter-evidence (antithesis). Optionally synthesizes a balanced assessment using the Exa Research API.',
+  category: 'analysis',
+  parameters: [
+    { name: 'thesis', type: 'string', required: true, description: 'The hypothesis to test' },
+    { name: 'thesisQuery', type: 'string', required: true, description: 'Search query for supporting evidence' },
+    { name: 'antithesisQuery', type: 'string', required: true, description: 'Search query for counter-evidence' },
+    { name: 'entity', type: 'object', required: false, description: 'Entity type filter' },
+    { name: 'enrichments', type: 'array', required: false, description: 'Enrichments for both websets' },
+    { name: 'count', type: 'number', required: false, description: 'Results per side', default: 25 },
+    { name: 'synthesize', type: 'boolean', required: false, description: 'Run Research API synthesis for balanced assessment', default: false },
+    { name: 'timeout', type: 'number', required: false, description: 'Timeout in milliseconds', default: 300000 },
+  ],
+  steps: [
+    'Validate thesis, thesisQuery, and antithesisQuery',
+    'Create thesis webset (supporting evidence)',
+    'Create antithesis webset (counter-evidence)',
+    'Poll thesis webset until idle',
+    'Poll antithesis webset until idle',
+    'Collect items from both websets',
+    'Optionally synthesize balanced assessment via Research API',
+  ],
+  output: 'Thesis side (webset ID, items, counts), antithesis side (webset ID, items, counts), and optional synthesis with balanced verdict, confidence, and identified blind spots.',
+  example: `await callOperation('tasks.create', {\n  type: 'adversarial.verify',\n  args: {\n    thesis: 'Remote-first companies have higher employee retention',\n    thesisQuery: 'remote work companies employee retention benefits',\n    antithesisQuery: 'remote work downsides turnover attrition problems',\n    entity: { type: 'article' },\n    synthesize: true,\n  }\n});`,
+  relatedWorkflows: ['convergent.search', 'research.deep', 'retrieval.verifiedAnswer'],
+  tags: ['adversarial', 'hypothesis', 'thesis', 'antithesis', 'verification', 'debate', 'synthesis'],
+};
+registerWorkflow('adversarial.verify', adversarialVerifyWorkflow, meta);
