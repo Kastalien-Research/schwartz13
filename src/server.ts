@@ -6,6 +6,7 @@ import { Exa } from "exa-js";
 import { registerSearchTool } from "./tools/searchTool.js";
 import { registerExecuteTool } from "./tools/executeTool.js";
 import { registerStatusTool } from "./tools/statusTool.js";
+import { registerWorkflowMcp } from "./workflows/mcp.js";
 import { createWebhookRouter } from "./webhooks/receiver.js";
 import { initDAuth, protectedResourceMetadata, requireDAuth } from "./auth/dauth.js";
 import type { Express, Request, Response } from "express";
@@ -31,6 +32,7 @@ export interface ServerConfig {
 export interface ServerInstance {
   app: Express;
   sessions: Map<string, SessionEntry>;
+  shutdown(): void;
 }
 
 interface SessionEntry {
@@ -174,6 +176,7 @@ export function createServer(config: ServerConfig): ServerInstance {
         registerStatusTool(server, exa, {
           defaultCompatMode: config.defaultCompatMode ?? 'safe',
         });
+        registerWorkflowMcp(server);
 
         transport.onclose = () => {
           const entry = sessions.get(transport.sessionId || newSessionId);
@@ -215,5 +218,13 @@ export function createServer(config: ServerConfig): ServerInstance {
     }
   });
 
-  return { app, sessions };
+  function shutdown() {
+    for (const [, entry] of sessions) {
+      if (entry.timeoutId) clearTimeout(entry.timeoutId);
+      entry.transport.close();
+    }
+    sessions.clear();
+  }
+
+  return { app, sessions, shutdown };
 }

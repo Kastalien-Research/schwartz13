@@ -1,6 +1,6 @@
 import type { Exa } from 'exa-js';
 import type { TaskStore } from '../lib/taskStore.js';
-import { registerWorkflow } from './types.js';
+import { registerWorkflow, type WorkflowMeta } from './types.js';
 import {
   createStepTracker,
   isCancelled,
@@ -1034,5 +1034,33 @@ async function semanticCronWorkflow(
   );
 }
 
+const meta: WorkflowMeta = {
+  title: 'Semantic Cron',
+  description: 'Multi-lens monitoring system. Creates parallel websets (lenses) to observe different facets, evaluates items against shape conditions on enrichment values, joins results across lenses by entity or temporal proximity, and fires a composite signal when conditions are met. Supports template variables, snapshot persistence, delta computation, and webhook auto-registration.',
+  category: 'monitoring',
+  parameters: [
+    { name: 'config', type: 'object', required: true, description: 'Full monitoring config with lenses, shapes, join, signal, and optional monitor/webhook settings' },
+    { name: 'variables', type: 'object', required: false, description: 'Template variable substitution for {{var}} placeholders in config' },
+    { name: 'existingWebsets', type: 'object', required: false, description: 'Map of lensId to websetId for re-evaluation of existing websets' },
+    { name: 'timeout', type: 'number', required: false, description: 'Timeout in milliseconds', default: 300000 },
+    { name: 'previousSnapshot', type: 'object', required: false, description: 'Previous snapshot for manual delta computation' },
+  ],
+  steps: [
+    'Validate config and expand template variables',
+    'Create or fetch websets for each lens',
+    'Register Exa webhooks (initial run only)',
+    'Poll all websets until idle',
+    'Collect items, resolve enrichment descriptions, evaluate shape conditions',
+    'Join lens results by entity, temporal proximity, or cooccurrence',
+    'Evaluate composite signal (all/any/threshold/combination)',
+    'Build and persist snapshot to SQLite',
+    'Create monitors for recurring evaluation (if configured)',
+  ],
+  output: 'Webset IDs per lens, full snapshot (lenses with shaped items, join result with matched entities, signal result with fired/satisfiedBy), delta against previous snapshot (if re-evaluation), and step timings.',
+  example: `await callOperation('tasks.create', {\n  type: 'semantic.cron',\n  args: {\n    config: {\n      name: 'design-partner-radar',\n      lenses: [\n        { id: 'hiring', source: { query: '{{company}} hiring AI engineers', entity: { type: 'company' }, enrichments: [{ description: 'Number of open AI roles', format: 'number' }], count: 30 } },\n        { id: 'funding', source: { query: '{{company}} raised funding 2024', entity: { type: 'company' }, enrichments: [{ description: 'Funding amount', format: 'text' }], count: 30 } },\n      ],\n      shapes: [\n        { lensId: 'hiring', conditions: [{ enrichment: 'Number of open AI roles', operator: 'gte', value: 3 }], logic: 'all' },\n        { lensId: 'funding', conditions: [{ enrichment: 'Funding amount', operator: 'exists' }], logic: 'all' },\n      ],\n      join: { by: 'entity', minLensOverlap: 2 },\n      signal: { requires: { type: 'all' } },\n    },\n    variables: { company: 'AI startup' },\n  }\n});`,
+  relatedWorkflows: ['lifecycle.harvest', 'verify.enrichments'],
+  tags: ['monitoring', 'cron', 'lenses', 'shapes', 'join', 'signal', 'delta', 'snapshot', 'webhook'],
+};
+
 // Register
-registerWorkflow('semantic.cron', semanticCronWorkflow);
+registerWorkflow('semantic.cron', semanticCronWorkflow, meta);

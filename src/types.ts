@@ -2,7 +2,7 @@
 export interface Webset {
   id: string;
   externalId?: string;
-  name?: string;
+  title?: string;
   description?: string;
   status: 'idle' | 'searching' | 'enriching' | 'monitoring' | 'canceled';
   itemsCount: number;

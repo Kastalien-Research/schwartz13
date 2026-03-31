@@ -1,6 +1,6 @@
 import type { Exa } from 'exa-js';
 import type { TaskStore } from '../lib/taskStore.js';
-import { registerWorkflow } from './types.js';
+import { registerWorkflow, type WorkflowMeta } from './types.js';
 import { isCancelled, validateRequired, withSummary } from './helpers.js';
 
 async function verifiedAnswerWorkflow(
@@ -71,4 +71,26 @@ async function verifiedAnswerWorkflow(
   }, `Answer verified: ${overlapCount}/${validationUrls.length} validation sources overlap with citations in ${(duration / 1000).toFixed(1)}s`);
 }
 
-registerWorkflow('retrieval.verifiedAnswer', verifiedAnswerWorkflow);
+const meta: WorkflowMeta = {
+  title: 'Verified Answer',
+  description: 'Get an answer to a question with independent validation. First calls the Exa answer API for a cited response, then runs an independent search to check how many validation sources overlap with the original citations.',
+  category: 'retrieval',
+  parameters: [
+    { name: 'query', type: 'string', required: true, description: 'Question to answer and verify' },
+    { name: 'numValidation', type: 'number', required: false, description: 'Number of independent validation sources', default: 3 },
+    { name: 'model', type: 'string', required: false, description: 'Model to use for answer generation' },
+    { name: 'systemPrompt', type: 'string', required: false, description: 'System prompt for answer generation' },
+  ],
+  steps: [
+    'Get answer with citations from Exa answer API',
+    'Run independent search for corroborating sources',
+    'Read validation source contents',
+    'Compute citation overlap between answer sources and validation sources',
+  ],
+  output: 'Answer text, citations, validation sources with highlights, and overlap statistics showing how many independent sources corroborate the citations.',
+  example: `await callOperation('tasks.create', {\n  type: 'retrieval.verifiedAnswer',\n  args: {\n    query: 'What is the current market size of the MCP ecosystem?',\n    numValidation: 5,\n  }\n});`,
+  relatedWorkflows: ['retrieval.searchAndRead', 'adversarial.verify'],
+  tags: ['answer', 'verify', 'citations', 'validation', 'confidence', 'fact-check'],
+};
+
+registerWorkflow('retrieval.verifiedAnswer', verifiedAnswerWorkflow, meta);

@@ -1,6 +1,6 @@
 import type { Exa } from 'exa-js';
 import type { TaskStore } from '../lib/taskStore.js';
-import { registerWorkflow } from './types.js';
+import { registerWorkflow, type WorkflowMeta } from './types.js';
 import {
   createStepTracker,
   isCancelled,
@@ -243,4 +243,28 @@ async function convergentSearchWorkflow(
   }, `${queries.length} queries → ${totalUnique} unique entities, ${intersection.length} in intersection (${overlapPct}% overlap) in ${(duration / 1000).toFixed(0)}s`);
 }
 
-registerWorkflow('convergent.search', convergentSearchWorkflow);
+const meta: WorkflowMeta = {
+  title: 'Convergent Search',
+  description: 'Find entities from multiple angles by running 2-5 different search queries in parallel, then identifying which entities appear across multiple queries. High confidence comes from convergent evidence.',
+  category: 'analysis',
+  parameters: [
+    { name: 'queries', type: 'array', required: true, description: 'Search queries approaching the topic from different angles', constraints: '2-5 items' },
+    { name: 'entity', type: 'object', required: true, description: 'Entity type: { type: "company" | "person" | "article" }' },
+    { name: 'criteria', type: 'array', required: false, description: 'Filtering criteria for each search' },
+    { name: 'count', type: 'number', required: false, description: 'Results per query', default: 25 },
+    { name: 'timeout', type: 'number', required: false, description: 'Timeout in milliseconds', default: 300000 },
+  ],
+  steps: [
+    'Validate queries (2-5 required) and entity type',
+    'Create separate websets for each query',
+    'Poll all websets until idle',
+    'Collect items from all websets',
+    'Deduplicate by URL exact match and fuzzy name matching (Dice coefficient > 0.85)',
+    'Compute overlap matrix between query pairs',
+  ],
+  output: 'Webset IDs, intersection entities (found in 2+ queries with confidence scores), unique entities (found in only one query), overlap matrix, and total unique entity count.',
+  example: `await callOperation('tasks.create', {\n  type: 'convergent.search',\n  args: {\n    queries: [\n      'companies building MCP servers',\n      'Model Context Protocol implementations',\n      'LLM tool-use framework providers',\n    ],\n    entity: { type: 'company' },\n    count: 25,\n  }\n});`,
+  relatedWorkflows: ['qd.winnow', 'adversarial.verify'],
+  tags: ['convergent', 'triangulation', 'multi-query', 'intersection', 'dedup', 'confidence'],
+};
+registerWorkflow('convergent.search', convergentSearchWorkflow, meta);

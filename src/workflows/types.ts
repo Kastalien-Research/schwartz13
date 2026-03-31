@@ -8,8 +8,31 @@ export type WorkflowFunction = (
   store: TaskStore,
 ) => Promise<unknown>;
 
-export const workflowRegistry = new Map<string, WorkflowFunction>();
+export interface ParameterMeta {
+  name: string;
+  type: string;
+  required: boolean;
+  description: string;
+  default?: unknown;
+  constraints?: string;
+}
 
-export function registerWorkflow(type: string, fn: WorkflowFunction): void {
+export interface WorkflowMeta {
+  title: string;
+  description: string;
+  category: string;
+  parameters: ParameterMeta[];
+  steps: string[];
+  output: string;
+  example: string;
+  relatedWorkflows?: string[];
+  tags: string[];
+}
+
+export const workflowRegistry = new Map<string, WorkflowFunction>();
+export const workflowMetadata = new Map<string, WorkflowMeta>();
+
+export function registerWorkflow(type: string, fn: WorkflowFunction, meta?: WorkflowMeta): void {
   workflowRegistry.set(type, fn);
+  if (meta) workflowMetadata.set(type, meta);
 }

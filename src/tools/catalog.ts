@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { OPERATIONS, OPERATION_SCHEMAS } from './operations.js';
-import { workflowRegistry } from '../workflows/types.js';
+import { workflowRegistry, workflowMetadata } from '../workflows/types.js';
 
 export interface CatalogEntry {
   name: string;
@@ -57,11 +57,18 @@ function buildCatalog(): CatalogEntry[] {
   for (const [type] of workflowRegistry) {
     const name = `workflow.${type}`;
     const domain = 'workflow';
+    const meta = workflowMetadata.get(type);
+    const summary = meta
+      ? meta.description
+      : `Background workflow: ${type} (launch via tasks.create with type="${type}")`;
+    const tags = meta
+      ? [...tokenize(type), 'workflow', ...meta.tags]
+      : [...tokenize(type), 'workflow', 'task', 'background'];
     entries.push({
       name,
       domain,
-      summary: `Background workflow: ${type} (launch via tasks.create with type="${type}")`,
-      tags: [...tokenize(type), 'workflow', 'task', 'background'],
+      summary,
+      tags: [...new Set(tags)],
       schema: z.object({ type: z.literal(type) }).catchall(z.unknown()),
     });
   }

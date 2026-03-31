@@ -46,6 +46,7 @@ export async function stopE2EServer(ctx: E2EContext): Promise<void> {
   } catch {
     // client may already be closed
   }
+  ctx.serverInstance.shutdown();
   await new Promise<void>((resolve, reject) => {
     ctx.httpServer.close((err) => (err ? reject(err) : resolve()));
   });

@@ -3,12 +3,28 @@ import { startE2EServer, stopE2EServer, HAS_API_KEY, type E2EContext } from './s
 
 describe.skipIf(!HAS_API_KEY)('MCP Transport E2E', () => {
   let ctx: E2EContext;
+  const createdWebsetIds: string[] = [];
 
   beforeAll(async () => {
     ctx = await startE2EServer();
   });
 
   afterAll(async () => {
+    // Clean up any websets created during tests
+    for (const id of createdWebsetIds) {
+      try {
+        await ctx.client.callTool({
+          name: 'execute',
+          arguments: { code: `await callOperation('websets.cancel', { id: '${id}' })` },
+        });
+      } catch {}
+      try {
+        await ctx.client.callTool({
+          name: 'execute',
+          arguments: { code: `await callOperation('websets.delete', { id: '${id}' })` },
+        });
+      } catch {}
+    }
     if (ctx) await stopE2EServer(ctx);
   });
 
@@ -111,6 +127,14 @@ describe.skipIf(!HAS_API_KEY)('MCP Transport E2E', () => {
         `,
       },
     });
+    // Track for cleanup in case the inline delete didn't run
+    if (!result.isError) {
+      const content = result.content as Array<{ type: string; text: string }>;
+      try {
+        const data = JSON.parse(content[0].text);
+        if (data.result?.created) createdWebsetIds.push(data.result.created);
+      } catch {}
+    }
     expect(result.isError).toBeFalsy();
   });
 

@@ -1,7 +1,7 @@
 import type { Exa } from 'exa-js';
 import type { TaskStore } from '../lib/taskStore.js';
 import { Semaphore } from '../lib/semaphore.js';
-import { registerWorkflow } from './types.js';
+import { registerWorkflow, type WorkflowMeta } from './types.js';
 import {
   createStepTracker,
   isCancelled,
@@ -201,4 +201,33 @@ async function verifiedCollectionWorkflow(
   }, `${allItems.length} items collected, ${selectedItems.length} researched (${succeededCount} succeeded) in ${(duration / 1000).toFixed(0)}s`);
 }
 
-registerWorkflow('research.verifiedCollection', verifiedCollectionWorkflow);
+const meta: WorkflowMeta = {
+  title: 'Verified Collection',
+  description: 'Collect entities via webset search, then run per-entity deep research using the Exa Research API with template expansion. Build dossiers by combining structured collection with deep investigation.',
+  category: 'research',
+  parameters: [
+    { name: 'query', type: 'string', required: true, description: 'Search query for entity collection' },
+    { name: 'entity', type: 'object', required: true, description: 'Entity type: { type: "company" | "person" | "article" }' },
+    { name: 'researchPrompt', type: 'string', required: true, description: 'Template for per-entity research using {{name}}, {{url}}, {{description}}' },
+    { name: 'criteria', type: 'array', required: false, description: 'Filtering criteria for the webset search' },
+    { name: 'enrichments', type: 'array', required: false, description: 'Enrichments to add to the webset' },
+    { name: 'researchSchema', type: 'object', required: false, description: 'JSON schema for structured research output' },
+    { name: 'researchModel', type: 'string', required: false, description: 'Research API model', default: 'exa-research' },
+    { name: 'researchLimit', type: 'number', required: false, description: 'Max entities to research', default: 10 },
+    { name: 'count', type: 'number', required: false, description: 'Max search results', default: 25 },
+    { name: 'timeout', type: 'number', required: false, description: 'Timeout in milliseconds', default: 300000 },
+  ],
+  steps: [
+    'Validate parameters and research prompt template',
+    'Create webset with search criteria and enrichments',
+    'Poll until webset is idle',
+    'Collect items from webset',
+    'Run per-entity research with template expansion (concurrency: 3)',
+  ],
+  output: 'Webset ID, collected items with per-entity research results, total items collected, count of successfully researched entities.',
+  example: `await callOperation('tasks.create', {\n  type: 'research.verifiedCollection',\n  args: {\n    query: 'AI startups building developer tools',\n    entity: { type: 'company' },\n    researchPrompt: 'Research {{name}} ({{url}}). What is their main product, founding date, and funding status?',\n    researchLimit: 5,\n    count: 20,\n  }\n});`,
+  relatedWorkflows: ['research.deep', 'lifecycle.harvest'],
+  tags: ['research', 'collection', 'dossier', 'per-entity', 'template', 'deep'],
+};
+
+registerWorkflow('research.verifiedCollection', verifiedCollectionWorkflow, meta);

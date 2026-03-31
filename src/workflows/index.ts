@@ -10,3 +10,4 @@ import './searchAndRead.js';
 import './expandAndCollect.js';
 import './verifiedAnswer.js';
 import './semanticCron.js';
+import './verifyEnrichments.js';

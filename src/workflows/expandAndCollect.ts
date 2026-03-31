@@ -1,6 +1,6 @@
 import type { Exa } from 'exa-js';
 import type { TaskStore } from '../lib/taskStore.js';
-import { registerWorkflow } from './types.js';
+import { registerWorkflow, type WorkflowMeta } from './types.js';
 import { isCancelled, validateRequired, withSummary } from './helpers.js';
 
 async function expandAndCollectWorkflow(
@@ -96,4 +96,27 @@ async function expandAndCollectWorkflow(
   }, `"${query}" → ${initialResults.length} initial + ${totalExpanded} expanded = ${deduplicated.length} unique in ${(duration / 1000).toFixed(1)}s`);
 }
 
-registerWorkflow('retrieval.expandAndCollect', expandAndCollectWorkflow);
+const meta: WorkflowMeta = {
+  title: 'Expand and Collect',
+  description: 'Start with a search, then expand coverage by finding similar pages for the top results. Deduplicates by URL. Good for discovering content beyond what a single search query returns.',
+  category: 'retrieval',
+  parameters: [
+    { name: 'query', type: 'string', required: true, description: 'Search query string' },
+    { name: 'numResults', type: 'number', required: false, description: 'Results per search', default: 5 },
+    { name: 'expandTop', type: 'number', required: false, description: 'Number of top results to expand via findSimilar', default: 3 },
+    { name: 'category', type: 'string', required: false, description: 'Content category filter' },
+    { name: 'startPublishedDate', type: 'string', required: false, description: 'Only include pages published after this date' },
+    { name: 'endPublishedDate', type: 'string', required: false, description: 'Only include pages published before this date' },
+  ],
+  steps: [
+    'Run initial Exa search with query and filters',
+    'For each of the top N results, run findSimilar to discover related pages',
+    'Deduplicate all results by URL',
+  ],
+  output: 'Deduplicated results with title, URL, score, and source tracking (initial vs expanded-from-N).',
+  example: `await callOperation('tasks.create', {\n  type: 'retrieval.expandAndCollect',\n  args: {\n    query: 'MCP server implementations',\n    numResults: 5,\n    expandTop: 3,\n  }\n});`,
+  relatedWorkflows: ['retrieval.searchAndRead'],
+  tags: ['search', 'expand', 'similar', 'discover', 'breadth', 'dedup'],
+};
+
+registerWorkflow('retrieval.expandAndCollect', expandAndCollectWorkflow, meta);
