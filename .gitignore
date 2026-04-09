@@ -23,10 +23,3 @@ ai_docs/
 use-case-ideas/
 
 keyfile.json
-
-# Subprojects (independent builds — cloned, not authored here)
-google_workspace_mcp/
-servers/google-workspace-mcp/
-servers/agentmail-mcp-codemode/
-servers/effect-airtable-mcp/
-servers/thoughtbox-gateway/
