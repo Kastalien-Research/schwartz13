@@ -6,7 +6,7 @@ user-invocable: true
 allowed-tools: Read, Write
 ---
 
-Manage workflow configurations at `/workspaces/schwartz13/data/workflow-configs.json`.
+Manage workflow configurations at `${CLAUDE_PLUGIN_DATA}/workflow-configs.json` (or wherever the user has placed one).
 
 ## Commands
 
@@ -20,7 +20,7 @@ Display the full config for a specific route including its step chain, gate cond
 Ask the user for:
 1. Route ID (typically matching a webset ID, inbox ID, or base ID)
 2. Human-readable name
-3. Channel source (websets-channel, google-workspace-channel, airtable-channel)
+3. Channel source (e.g. `websets-channel`)
 4. Event type(s) to trigger on
 5. Gate conditions (optional)
 6. Steps to execute (reference names from the `steps` library)

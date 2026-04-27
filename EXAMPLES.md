@@ -1,20 +1,21 @@
-# schwartz13 Examples
+# Websets Examples
 
-This server is Docker-first and exposes a single HTTP MCP endpoint at `/mcp`.
-All examples below assume the server is already running.
+The primary install path is the Claude Code plugin (`/plugin install websets@websets-mcp-codemode`); the HTTP/Docker path below is for hosted deployments.
 
-## Start the Server
+## Plugin install
+
+See [README.md](./README.md) for the plugin install flow. Once installed, every `execute` example below works as-is — Claude calls the bundled `mcp__websets__execute` tool with `callOperation(...)`.
+
+## Docker / HTTP path
 
 ```bash
 EXA_API_KEY=your-key docker compose up --build
 ```
 
-## Client Configuration
-
 ```json
 {
   "mcpServers": {
-    "schwartz13": {
+    "websets": {
       "type": "http",
       "url": "http://localhost:7860/mcp"
     }
