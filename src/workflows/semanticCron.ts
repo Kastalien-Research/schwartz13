@@ -889,8 +889,12 @@ async function semanticCronWorkflow(
     }
   }
 
-  // Register Exa webhooks (initial run only, non-fatal)
-  if (!isReeval && config.webhookUrl) {
+  // Register Exa webhooks (initial run only, non-fatal). webhookUrl resolves
+  // explicit config first, then WEBSETS_PUBLIC_URL env var so callers don't
+  // need to pass it on every invocation when the server has a stable
+  // publicly-reachable URL (codespace public port, ngrok, prod host, etc).
+  const webhookUrl = config.webhookUrl ?? process.env.WEBSETS_PUBLIC_URL;
+  if (!isReeval && webhookUrl) {
     const whEvents = config.webhookEvents ?? [
       'webset.item.created',
       'webset.item.enriched',
@@ -898,7 +902,7 @@ async function semanticCronWorkflow(
     ];
     try {
       await exa.websets.webhooks.create({
-        url: `${config.webhookUrl}/webhooks/exa`,
+        url: `${webhookUrl}/webhooks/exa`,
         events: whEvents,
       } as any);
     } catch {
