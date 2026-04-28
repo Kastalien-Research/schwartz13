@@ -62,6 +62,15 @@ interface JoinConfig {
   entityMatch?: { method?: string; nameThreshold?: number };
   temporal?: { window?: string; days?: number };
   minLensOverlap?: number;
+  /**
+   * Optional: join on a shaped enrichment value (keyed by description) instead of
+   * the canonical Exa-extracted entity name. Items lacking the enrichment value
+   * are excluded from the join. Used when canonical entity extraction is
+   * unreliable but a strong derivable field exists in enrichments — e.g. when
+   * Exa returns publisher companies as the entity but each item carries an
+   * extracted "Model name" enrichment that's the real join axis.
+   */
+  keyEnrichment?: string;
 }
 
 interface SignalConfig {
@@ -285,6 +294,19 @@ export function evaluateShape(
 
 // --- 3. Join Engine ---
 
+function normalizeEnrichmentKey(raw: unknown): string | null {
+  if (typeof raw === 'string') {
+    const trimmed = raw.trim();
+    return trimmed || null;
+  }
+  if (Array.isArray(raw)) {
+    for (const v of raw) {
+      if (typeof v === 'string' && v.trim()) return v.trim();
+    }
+  }
+  return null;
+}
+
 export function joinLensResults(
   lensResults: LensResult[],
   joinConfig: JoinConfig,
@@ -313,12 +335,41 @@ export function joinLensResults(
     }
   >();
 
+  const keyEnrichment = joinConfig.keyEnrichment;
+  const fuzzyEnabled = joinConfig.entityMatch?.method !== 'exact';
+
   for (const lr of lensResults) {
     for (const si of lr.shapedItems) {
+      // Derive the join key. In keyEnrichment mode, items missing the value are skipped.
+      let joinKey: string | null;
+      if (keyEnrichment) {
+        joinKey = normalizeEnrichmentKey(si.enrichments[keyEnrichment]);
+        if (!joinKey) continue;
+      } else {
+        joinKey = si.name;
+      }
+
       let matched = false;
 
-      for (const [key, existing] of entityMap) {
-        // URL exact match
+      for (const [, existing] of entityMap) {
+        if (keyEnrichment) {
+          // Match on the enrichment value: case-insensitive exact, plus optional fuzzy.
+          const a = joinKey!.toLowerCase();
+          const b = existing.entity.toLowerCase();
+          const isMatch =
+            a === b ||
+            (fuzzyEnabled && diceCoefficient(joinKey!, existing.entity) > threshold);
+          if (isMatch) {
+            existing.lenses.add(lr.lensId);
+            existing.shapes[lr.lensId] = si.enrichments;
+            existing.timestamps.push({ lensId: lr.lensId, createdAt: si.createdAt });
+            matched = true;
+            break;
+          }
+          continue;
+        }
+
+        // Default mode: URL exact match
         if (si.url && existing.url && si.url === existing.url) {
           existing.lenses.add(lr.lensId);
           existing.shapes[lr.lensId] = si.enrichments;
@@ -326,7 +377,7 @@ export function joinLensResults(
           matched = true;
           break;
         }
-        // Name fuzzy match
+        // Default mode: name fuzzy match
         if (si.name && existing.entity && diceCoefficient(si.name, existing.entity) > threshold) {
           existing.lenses.add(lr.lensId);
           existing.shapes[lr.lensId] = si.enrichments;
@@ -337,9 +388,9 @@ export function joinLensResults(
       }
 
       if (!matched) {
-        const key = si.url || si.name || si.id;
-        entityMap.set(key, {
-          entity: si.name,
+        const mapKey = keyEnrichment ? joinKey! : (si.url || si.name || si.id);
+        entityMap.set(mapKey, {
+          entity: keyEnrichment ? joinKey! : si.name,
           url: si.url,
           lenses: new Set([lr.lensId]),
           shapes: { [lr.lensId]: si.enrichments },
