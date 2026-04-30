@@ -13,14 +13,19 @@ if (
   );
 }
 
+if (!process.env.EXA_WEBHOOK_SECRET) {
+  console.warn(
+    'NOTE: EXA_WEBHOOK_SECRET is not set. Per-webhook secrets captured at '
+    + 'webhooks.create time will be used for signature verification; until at '
+    + 'least one webhook is registered, POST /webhooks/exa accepts unsigned '
+    + 'payloads.',
+  );
+}
+
 const { app } = createServer({
   exaApiKey: process.env.EXA_API_KEY || '',
   defaultCompatMode,
   webhookSecret: process.env.EXA_WEBHOOK_SECRET,
-  resourceUrl: process.env.DAUTH_RESOURCE_URL,
-  authServerUrl: process.env.DAUTH_SERVER_URL,
-  requiredScopes: process.env.DAUTH_SCOPES?.split(',').filter(Boolean),
-  skipDAuth: process.env.DAUTH_SKIP_VALIDATION === 'true',
 });
 
 const PORT = process.env.PORT || 7860;

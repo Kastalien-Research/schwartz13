@@ -11,7 +11,8 @@ import {
 } from './helpers.js';
 import { projectItem } from '../lib/projections.js';
 import { diceCoefficient } from './convergent.js';
-import { insertSnapshot, getLatestSnapshot } from '../store/db.js';
+import { insertSnapshot, getLatestSnapshot, saveWebhookSecret } from '../store/db.js';
+import { webhookEventBus, createEvent } from '../webhooks/eventBus.js';
 
 // --- Types ---
 
@@ -62,6 +63,15 @@ interface JoinConfig {
   entityMatch?: { method?: string; nameThreshold?: number };
   temporal?: { window?: string; days?: number };
   minLensOverlap?: number;
+  /**
+   * Optional: join on a shaped enrichment value (keyed by description) instead of
+   * the canonical Exa-extracted entity name. Items lacking the enrichment value
+   * are excluded from the join. Used when canonical entity extraction is
+   * unreliable but a strong derivable field exists in enrichments — e.g. when
+   * Exa returns publisher companies as the entity but each item carries an
+   * extracted "Model name" enrichment that's the real join axis.
+   */
+  keyEnrichment?: string;
 }
 
 interface SignalConfig {
@@ -285,6 +295,19 @@ export function evaluateShape(
 
 // --- 3. Join Engine ---
 
+function normalizeEnrichmentKey(raw: unknown): string | null {
+  if (typeof raw === 'string') {
+    const trimmed = raw.trim();
+    return trimmed || null;
+  }
+  if (Array.isArray(raw)) {
+    for (const v of raw) {
+      if (typeof v === 'string' && v.trim()) return v.trim();
+    }
+  }
+  return null;
+}
+
 export function joinLensResults(
   lensResults: LensResult[],
   joinConfig: JoinConfig,
@@ -313,12 +336,41 @@ export function joinLensResults(
     }
   >();
 
+  const keyEnrichment = joinConfig.keyEnrichment;
+  const fuzzyEnabled = joinConfig.entityMatch?.method !== 'exact';
+
   for (const lr of lensResults) {
     for (const si of lr.shapedItems) {
+      // Derive the join key. In keyEnrichment mode, items missing the value are skipped.
+      let joinKey: string | null;
+      if (keyEnrichment) {
+        joinKey = normalizeEnrichmentKey(si.enrichments[keyEnrichment]);
+        if (!joinKey) continue;
+      } else {
+        joinKey = si.name;
+      }
+
       let matched = false;
 
-      for (const [key, existing] of entityMap) {
-        // URL exact match
+      for (const [, existing] of entityMap) {
+        if (keyEnrichment) {
+          // Match on the enrichment value: case-insensitive exact, plus optional fuzzy.
+          const a = joinKey!.toLowerCase();
+          const b = existing.entity.toLowerCase();
+          const isMatch =
+            a === b ||
+            (fuzzyEnabled && diceCoefficient(joinKey!, existing.entity) > threshold);
+          if (isMatch) {
+            existing.lenses.add(lr.lensId);
+            existing.shapes[lr.lensId] = si.enrichments;
+            existing.timestamps.push({ lensId: lr.lensId, createdAt: si.createdAt });
+            matched = true;
+            break;
+          }
+          continue;
+        }
+
+        // Default mode: URL exact match
         if (si.url && existing.url && si.url === existing.url) {
           existing.lenses.add(lr.lensId);
           existing.shapes[lr.lensId] = si.enrichments;
@@ -326,7 +378,7 @@ export function joinLensResults(
           matched = true;
           break;
         }
-        // Name fuzzy match
+        // Default mode: name fuzzy match
         if (si.name && existing.entity && diceCoefficient(si.name, existing.entity) > threshold) {
           existing.lenses.add(lr.lensId);
           existing.shapes[lr.lensId] = si.enrichments;
@@ -337,9 +389,9 @@ export function joinLensResults(
       }
 
       if (!matched) {
-        const key = si.url || si.name || si.id;
-        entityMap.set(key, {
-          entity: si.name,
+        const mapKey = keyEnrichment ? joinKey! : (si.url || si.name || si.id);
+        entityMap.set(mapKey, {
+          entity: keyEnrichment ? joinKey! : si.name,
           url: si.url,
           lenses: new Set([lr.lensId]),
           shapes: { [lr.lensId]: si.enrichments },
@@ -680,6 +732,93 @@ export function buildSnapshot(
   };
 }
 
+// --- 6b. Signal-state event emission ---
+
+/**
+ * Decide whether a signal-state event should be published, and publish it.
+ *
+ * Fires `semantic-cron.signal-fired` when:
+ *   - Previous snapshot was not fired and current is fired (new fire), OR
+ *   - Both fired, but current has at least one entity not in the previous (spread).
+ *
+ * Fires `semantic-cron.signal-resolved` when the signal transitions
+ * fired → not fired.
+ *
+ * Stays silent for steady-state continued fires and steady-state non-fires.
+ */
+export function emitSignalStateEvents(
+  configName: string | undefined,
+  current: SnapshotData,
+  previous: SnapshotData | undefined,
+  taskId: string,
+): void {
+  const wasFired = previous?.signal?.fired === true;
+  const nowFired = current.signal.fired === true;
+
+  // Treat absent previous snapshot as "was: false" — first run with a fire is
+  // a new fire from the system's perspective.
+  const transitionToFired = !wasFired && nowFired;
+  const transitionToResolved = wasFired && !nowFired;
+
+  // Spread detection: still fired, but current has entities the previous didn't.
+  let newEntities: string[] = [];
+  if (wasFired && nowFired && previous) {
+    const prevEntities = new Set(previous.signal.entities ?? []);
+    newEntities = (current.signal.entities ?? []).filter(e => !prevEntities.has(e));
+  }
+  const transitionBySpread = wasFired && nowFired && newEntities.length > 0;
+
+  let reason: 'new-fire' | 'spread' | null = null;
+  if (transitionToFired) reason = 'new-fire';
+  else if (transitionBySpread) reason = 'spread';
+
+  if (reason) {
+    try {
+      webhookEventBus.publish(createEvent({
+        id: `semantic-cron-fire_${taskId}_${Date.now()}`,
+        type: 'semantic-cron.signal-fired',
+        configName,
+        taskId,
+        reason,
+        transition: {
+          was: wasFired,
+          now: nowFired,
+          newEntities: reason === 'new-fire'
+            ? (current.signal.entities ?? [])
+            : newEntities,
+          lostEntities: [],
+        },
+        snapshot: current,
+      }));
+    } catch {
+      // Event-bus failure is non-fatal; the snapshot is still persisted.
+    }
+    return;
+  }
+
+  if (transitionToResolved && previous) {
+    const currentEntities = new Set(current.signal.entities ?? []);
+    const lostEntities = (previous.signal.entities ?? []).filter(e => !currentEntities.has(e));
+    try {
+      webhookEventBus.publish(createEvent({
+        id: `semantic-cron-resolve_${taskId}_${Date.now()}`,
+        type: 'semantic-cron.signal-resolved',
+        configName,
+        taskId,
+        transition: {
+          was: wasFired,
+          now: nowFired,
+          newEntities: [],
+          lostEntities,
+        },
+        snapshot: current,
+      }));
+    } catch {
+      // Non-fatal.
+    }
+  }
+}
+
 // --- 7. Main Workflow ---
 
 async function semanticCronWorkflow(
@@ -694,7 +833,11 @@ async function semanticCronWorkflow(
   const rawConfig = args.config as SemanticCronConfig;
   const variables = args.variables as Record<string, string> | undefined;
   const existingWebsets = args.existingWebsets as Record<string, string> | undefined;
-  const timeoutMs = (args.timeout as number) ?? 300_000;
+  // Default poll deadline: 60 minutes. Real websets routinely take 10-30
+  // minutes on non-trivial queries; the previous 5-minute default would treat
+  // most production runs as timeouts. Callers needing a hard cap should pass
+  // `timeout` explicitly.
+  const timeoutMs = (args.timeout as number) ?? 60 * 60 * 1000;
 
   // Load previous snapshot from args or SQLite
   let previousSnapshot = args.previousSnapshot as SnapshotData | undefined;
@@ -702,8 +845,13 @@ async function semanticCronWorkflow(
     try {
       const stored = getLatestSnapshot(rawConfig.name);
       if (stored) previousSnapshot = stored as SnapshotData;
-    } catch {
-      // SQLite not available — non-fatal
+    } catch (err) {
+      console.error(
+        `[semanticCron] Failed to load previous snapshot for "${rawConfig.name}" `
+        + `from SQLite. Continuing without prior state — every fired signal will `
+        + `look like a fresh transition.`,
+        err,
+      );
     }
   }
 
@@ -735,6 +883,101 @@ async function semanticCronWorkflow(
         'validate',
       );
     }
+  }
+
+  // Reject configs whose signal/join math is degenerate for the lens count.
+  // Targeted at the trap where signal type 'all'/'threshold'/'combination' with
+  // a single lens reduces to a vacuous tautology that looks like real cross-lens
+  // correlation but isn't. Signal type 'any' is allowed on 1 lens — that's a
+  // valid "did anything match shape?" use case, not vacuous.
+  const lensCount = config.lenses.length;
+  const sigType = config.signal.requires.type;
+
+  if (lensCount < 2 && (sigType === 'all' || sigType === 'threshold' || sigType === 'combination')) {
+    throw new WorkflowError(
+      `Signal type "${sigType}" requires at least 2 lenses to be meaningful — `
+      + `with 1 lens it trivially fires for every shape match. `
+      + `Either add a second lens or use signal.requires.type "any".`,
+      'validate',
+    );
+  }
+
+  // Join minLensOverlap is only enforced when the join mode actually produces
+  // entities (entity / entity+temporal). cooccurrence and temporal modes return
+  // empty entities and don't use minOverlap.
+  const joinByEntities = config.join.by === 'entity' || config.join.by === 'entity+temporal';
+  if (joinByEntities) {
+    const minOverlap = config.join.minLensOverlap ?? 2;
+    if (minOverlap > lensCount) {
+      throw new WorkflowError(
+        `join.minLensOverlap (${minOverlap}) exceeds lens count (${lensCount}). `
+        + `No entity can ever satisfy this — signal would never fire.`,
+        'validate',
+      );
+    }
+    if (minOverlap < 2 && lensCount >= 2) {
+      throw new WorkflowError(
+        `join.minLensOverlap must be >= 2 when there are multiple lenses. `
+        + `minOverlap=1 makes every single-lens entity satisfy the join, defeating cross-lens correlation.`,
+        'validate',
+      );
+    }
+  }
+
+  if (sigType === 'threshold') {
+    const min = config.signal.requires.min ?? 2;
+    if (min > lensCount) {
+      throw new WorkflowError(
+        `signal.requires.min (${min}) exceeds lens count (${lensCount}). Signal would never fire.`,
+        'validate',
+      );
+    }
+    if (min < 2) {
+      throw new WorkflowError(
+        `signal.requires.min must be >= 2 for threshold signals. min=1 fires for any single-lens match.`,
+        'validate',
+      );
+    }
+  }
+
+  if (sigType === 'combination') {
+    const combos = config.signal.requires.sufficient;
+    if (!combos || combos.length === 0) {
+      throw new WorkflowError(
+        `signal.requires.sufficient must be a non-empty array of lens-id combinations for combination signals.`,
+        'validate',
+      );
+    }
+    for (const combo of combos) {
+      if (!combo || combo.length < 2) {
+        throw new WorkflowError(
+          `Each combination in signal.requires.sufficient must have at least 2 lens IDs. `
+          + `Got: ${JSON.stringify(combo)}`,
+          'validate',
+        );
+      }
+      for (const id of combo) {
+        if (!lensIds.includes(id)) {
+          throw new WorkflowError(
+            `Unknown lens ID "${id}" in signal.requires.sufficient. Available: ${lensIds.join(', ')}`,
+            'validate',
+          );
+        }
+      }
+    }
+  }
+
+  // config.name is load-bearing for snapshot persistence, delta computation, and
+  // replay. Without it, every run looks like a fresh signal-fired transition.
+  // Warn loudly rather than reject — existing demo configs may not set it, and
+  // it's easier to fix downstream than to break callers.
+  if (!config.name || config.name.trim().length === 0) {
+    console.warn(
+      `[semanticCron] config.name is unset — snapshot persistence, delta `
+      + `computation, and replay will be skipped. Every fired signal will look `
+      + `like a fresh transition. Set config.name to a stable string to enable `
+      + `state tracking across runs.`,
+    );
   }
 
   tracker.track('validate', step0);
@@ -838,20 +1081,63 @@ async function semanticCronWorkflow(
     }
   }
 
-  // Register Exa webhooks (initial run only, non-fatal)
-  if (!isReeval && config.webhookUrl) {
+  // Register Exa webhooks (initial run only, non-fatal). webhookUrl resolves
+  // explicit config first, then WEBSETS_PUBLIC_URL env var so callers don't
+  // need to pass it on every invocation when the server has a stable
+  // publicly-reachable URL (codespace public port, ngrok, prod host, etc).
+  const webhookUrl = config.webhookUrl ?? process.env.WEBSETS_PUBLIC_URL;
+  if (!isReeval && webhookUrl) {
+    const targetUrl = `${webhookUrl}/webhooks/exa`;
     const whEvents = config.webhookEvents ?? [
       'webset.item.created',
       'webset.item.enriched',
       'webset.idle',
     ];
     try {
-      await exa.websets.webhooks.create({
-        url: `${config.webhookUrl}/webhooks/exa`,
-        events: whEvents,
-      } as any);
-    } catch {
-      // Webhook creation failure is non-fatal
+      // Idempotency: skip creation if a webhook already exists for this URL.
+      // This stops every initial run from accumulating duplicate webhooks
+      // pointing at the same receiver.
+      let alreadyRegistered = false;
+      try {
+        for await (const existing of exa.websets.webhooks.listAll()) {
+          if ((existing as { url?: string }).url === targetUrl) {
+            alreadyRegistered = true;
+            break;
+          }
+        }
+      } catch (err) {
+        console.warn(
+          `[semanticCron] Could not list existing Exa webhooks before creating; `
+          + `proceeding with create (may duplicate).`,
+          err,
+        );
+      }
+
+      if (!alreadyRegistered) {
+        const response = await exa.websets.webhooks.create({
+          url: targetUrl,
+          events: whEvents,
+        } as any);
+        const raw = response as unknown as Record<string, unknown>;
+        const id = raw.id as string | undefined;
+        const secret = raw.secret as string | undefined;
+        if (id && secret) {
+          saveWebhookSecret(id, secret, raw.url as string | undefined);
+        } else {
+          console.warn(
+            `[semanticCron] webhooks.create returned without an id+secret pair `
+            + `(id=${id ?? 'unknown'}). Signature verification will not work `
+            + `for events from this webhook.`,
+          );
+        }
+      }
+    } catch (err) {
+      console.error(
+        `Failed to register Exa webhook at ${targetUrl} for events `
+        + `${whEvents.join(',')}. Webhook events will not be delivered until this `
+        + `is resolved.`,
+        err,
+      );
     }
   }
 
@@ -877,7 +1163,7 @@ async function semanticCronWorkflow(
         total: 8,
       });
 
-      await pollUntilIdle({
+      const pollResult = await pollUntilIdle({
         exa,
         websetId: websetIds[lens.id],
         taskId,
@@ -886,6 +1172,16 @@ async function semanticCronWorkflow(
         stepNum: 2,
         totalSteps: 8,
       });
+
+      if (pollResult.timedOut) {
+        throw new WorkflowError(
+          `Lens "${lens.id}" (websetId=${websetIds[lens.id]}) did not reach `
+          + `idle within ${Math.round(timeoutMs / 1000)}s. Pass a larger `
+          + `\`timeout\` arg if this is expected, or check the webset directly. `
+          + `Refusing to proceed with partial item data.`,
+          'poll',
+        );
+      }
 
       tracker.track(`poll-${lens.id}`, stepStart);
 
@@ -980,10 +1276,24 @@ async function semanticCronWorkflow(
   if (config.name) {
     try {
       insertSnapshot(config.name, snapshot);
-    } catch {
-      // SQLite not available — non-fatal
+    } catch (err) {
+      console.error(
+        `[semanticCron] Failed to persist snapshot for "${config.name}" to `
+        + `SQLite. The next run will not see this snapshot as the "previous" `
+        + `state, so signal transitions may be misreported.`,
+        err,
+      );
     }
   }
+
+  // Emit signal-state events to the bus.
+  // signal-fired is published when:
+  //   (a) the signal transitions false → true, or
+  //   (b) the signal is true and at least one new entity has joined since the
+  //       previous snapshot (substrate spread).
+  // signal-resolved is published when the signal transitions true → false.
+  // Subscribers (e.g. the websets-channel) can route on these directly.
+  emitSignalStateEvents(config.name, snapshot, previousSnapshot, taskId);
 
   // Step: Create monitors (initial run only, non-fatal)
   if (!isReeval && config.monitor) {
@@ -998,8 +1308,13 @@ async function semanticCronWorkflow(
             timezone: config.monitor.timezone,
           },
         });
-      } catch {
-        // Monitor creation failure is non-fatal
+      } catch (err) {
+        console.error(
+          `[semanticCron] Failed to create monitor for lens "${lens.id}" `
+          + `(websetId=${websetIds[lens.id]}) with cron="${config.monitor.cron}". `
+          + `This lens will not auto-rerun on schedule.`,
+          err,
+        );
       }
     }
     tracker.track('monitors', stepMon);
@@ -1064,3 +1379,80 @@ const meta: WorkflowMeta = {
 
 // Register
 registerWorkflow('semantic.cron', semanticCronWorkflow, meta);
+
+// --- 8. Replay Workflow ---
+// Loads a persisted snapshot and re-publishes `semantic-cron.signal-fired`
+// against it as if the cron had just fired. Used for demos / rehearsal where
+// you need a deterministic, fast, on-demand fire from real prior data.
+
+async function semanticCronReplayWorkflow(
+  taskId: string,
+  args: Record<string, unknown>,
+  _exa: Exa,
+  _store: TaskStore,
+): Promise<unknown> {
+  const configName = args.configName as string | undefined;
+  const inlineSnapshot = args.snapshot as SnapshotData | undefined;
+
+  if (!configName && !inlineSnapshot) {
+    throw new WorkflowError(
+      'semantic.cron.replay requires either configName or snapshot',
+      'validate',
+    );
+  }
+
+  let snapshot: SnapshotData;
+  if (inlineSnapshot) {
+    // Demo path: caller supplies the snapshot directly. Useful when SQLite
+    // doesn't have one (fresh deployment) or when bundling a known snapshot
+    // with a recording for guaranteed reproducibility.
+    snapshot = inlineSnapshot;
+  } else {
+    const snapshotRaw = getLatestSnapshot(configName!);
+    if (!snapshotRaw) {
+      throw new WorkflowError(
+        `no snapshot found for config "${configName}"`,
+        'validate',
+      );
+    }
+    snapshot = snapshotRaw as SnapshotData;
+  }
+
+  // Treat replay as a fresh fire: prior state is synthetic "not fired", so
+  // emitSignalStateEvents publishes signal-fired with reason: "new-fire".
+  const effectiveName = configName ?? 'inline-replay';
+  emitSignalStateEvents(effectiveName, snapshot, undefined, taskId);
+
+  return withSummary(
+    {
+      configName: effectiveName,
+      replayed: true,
+      source: inlineSnapshot ? 'inline' : 'sqlite',
+      signal: snapshot.signal,
+      joinedEntities: snapshot.join.entities.map(e => e.entity),
+    },
+    `replayed ${effectiveName} snapshot — signal: ${
+      snapshot.signal.fired ? `FIRED (${snapshot.signal.entities.length} entities)` : 'not fired'
+    }`,
+  );
+}
+
+const replayMeta: WorkflowMeta = {
+  title: 'Semantic Cron — Replay',
+  description: 'Re-publish a signal-fired event from a persisted snapshot. Used for deterministic demos: load the latest stored snapshot for a named config and emit `semantic-cron.signal-fired` to the webhook event bus, so subscribers (channels, action routes) react as if a fresh fire just occurred. Detection is canned (the snapshot was generated by an earlier real run); the action layer runs live.',
+  category: 'monitoring',
+  parameters: [
+    { name: 'configName', type: 'string', required: false, description: 'Config name whose latest snapshot should be loaded from SQLite. Either this or `snapshot` must be provided.' },
+    { name: 'snapshot', type: 'object', required: false, description: 'Inline snapshot object (same shape that semantic.cron returns). Bypasses SQLite — useful for self-contained demo bundles. Either this or `configName` must be provided.' },
+  ],
+  steps: [
+    'Load latest snapshot from SQLite for the given configName',
+    'Publish semantic-cron.signal-fired event to the webhook event bus with the snapshot in payload',
+  ],
+  output: 'Confirmation of replay with signal status and joined entity list.',
+  example: `await callOperation('tasks.create', {\n  type: 'semantic.cron.replay',\n  args: { configName: 'model-drift-monitor' },\n});`,
+  relatedWorkflows: ['semantic.cron'],
+  tags: ['monitoring', 'demo', 'replay', 'signal'],
+};
+
+registerWorkflow('semantic.cron.replay', semanticCronReplayWorkflow, replayMeta);

@@ -6,30 +6,36 @@ WORKDIR /app
 # Native build tools for better-sqlite3
 RUN apk add --no-cache python3 make g++
 
-# Copy package files
-COPY package*.json ./
+# Enable corepack and activate pnpm
+RUN corepack enable && corepack prepare pnpm@10.32.1 --activate
+
+# Copy package + lock files first for caching
+COPY package.json pnpm-lock.yaml .npmrc ./
 COPY tsconfig.json ./
 
 # Install all dependencies (scripts enabled for native module compilation)
-RUN npm ci
+RUN pnpm install --frozen-lockfile
 
 # Copy source code
 COPY src ./src
 
 # Build TypeScript to dist/
-RUN npm run build
+RUN pnpm run build
 
 # Production stage
 FROM node:20-alpine AS runner
 
 WORKDIR /app
 
-# Copy package files again for production install
-COPY package*.json ./
+# Enable corepack and activate pnpm
+RUN corepack enable && corepack prepare pnpm@10.32.1 --activate
+
+# Copy package + lock files again for production install
+COPY package.json pnpm-lock.yaml .npmrc ./
 
 # Native build tools for better-sqlite3
 RUN apk add --no-cache python3 make g++ && \
-    npm ci --omit=dev && \
+    pnpm install --frozen-lockfile --prod && \
     apk del python3 make g++
 
 # Copy built artifacts from builder
