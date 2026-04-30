@@ -2,6 +2,7 @@ import type { Exa } from 'exa-js';
 import { z } from 'zod';
 import { OperationHandler, successResult, errorResult, requireParams } from './types.js';
 import { projectWebhook, projectWebhookAttempt } from '../lib/projections.js';
+import { saveWebhookSecret, deleteWebhookSecret } from '../store/db.js';
 
 export const Schemas = {
   create: z.object({
@@ -55,7 +56,27 @@ export const create: OperationHandler = async (args, exa) => {
     if (args.metadata) params.metadata = args.metadata;
 
     const response = await exa.websets.webhooks.create(params as any);
-    return successResult(projectWebhook(response as unknown as Record<string, unknown>));
+    const raw = response as unknown as Record<string, unknown>;
+    const id = raw.id as string | undefined;
+    const secret = raw.secret as string | undefined;
+    if (id && secret) {
+      try {
+        saveWebhookSecret(id, secret, raw.url as string | undefined);
+      } catch (err) {
+        console.error(
+          `[webhooks.create] persisted webhook ${id} with Exa but failed to `
+          + `store its secret locally. Signature verification for this `
+          + `webhook will fail until resolved.`,
+          err,
+        );
+      }
+    } else if (id && !secret) {
+      console.warn(
+        `[webhooks.create] Exa returned webhook ${id} without a secret field. `
+        + `Signature verification for this webhook will not be possible.`,
+      );
+    }
+    return successResult(projectWebhook(raw));
   } catch (error) {
     return errorResult('webhooks.create', error);
   }
@@ -111,7 +132,17 @@ export const del: OperationHandler = async (args, exa) => {
   const guard = requireParams('webhooks.delete', args, 'id');
   if (guard) return guard;
   try {
-    const response = await exa.websets.webhooks.delete(args.id as string);
+    const id = args.id as string;
+    const response = await exa.websets.webhooks.delete(id);
+    try {
+      deleteWebhookSecret(id);
+    } catch (err) {
+      console.error(
+        `[webhooks.delete] removed webhook ${id} from Exa but failed to clear `
+        + `its locally stored secret.`,
+        err,
+      );
+    }
     return successResult(projectWebhook(response as unknown as Record<string, unknown>));
   } catch (error) {
     return errorResult('webhooks.delete', error);

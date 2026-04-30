@@ -13,6 +13,15 @@ if (
   );
 }
 
+if (!process.env.EXA_WEBHOOK_SECRET) {
+  console.warn(
+    'NOTE: EXA_WEBHOOK_SECRET is not set. Per-webhook secrets captured at '
+    + 'webhooks.create time will be used for signature verification; until at '
+    + 'least one webhook is registered, POST /webhooks/exa accepts unsigned '
+    + 'payloads.',
+  );
+}
+
 const { app } = createServer({
   exaApiKey: process.env.EXA_API_KEY || '',
   defaultCompatMode,

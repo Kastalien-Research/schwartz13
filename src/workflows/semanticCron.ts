@@ -11,7 +11,7 @@ import {
 } from './helpers.js';
 import { projectItem } from '../lib/projections.js';
 import { diceCoefficient } from './convergent.js';
-import { insertSnapshot, getLatestSnapshot } from '../store/db.js';
+import { insertSnapshot, getLatestSnapshot, saveWebhookSecret } from '../store/db.js';
 import { webhookEventBus, createEvent } from '../webhooks/eventBus.js';
 
 // --- Types ---
@@ -988,18 +988,57 @@ async function semanticCronWorkflow(
   // publicly-reachable URL (codespace public port, ngrok, prod host, etc).
   const webhookUrl = config.webhookUrl ?? process.env.WEBSETS_PUBLIC_URL;
   if (!isReeval && webhookUrl) {
+    const targetUrl = `${webhookUrl}/webhooks/exa`;
     const whEvents = config.webhookEvents ?? [
       'webset.item.created',
       'webset.item.enriched',
       'webset.idle',
     ];
     try {
-      await exa.websets.webhooks.create({
-        url: `${webhookUrl}/webhooks/exa`,
-        events: whEvents,
-      } as any);
-    } catch {
-      // Webhook creation failure is non-fatal
+      // Idempotency: skip creation if a webhook already exists for this URL.
+      // This stops every initial run from accumulating duplicate webhooks
+      // pointing at the same receiver.
+      let alreadyRegistered = false;
+      try {
+        for await (const existing of exa.websets.webhooks.listAll()) {
+          if ((existing as { url?: string }).url === targetUrl) {
+            alreadyRegistered = true;
+            break;
+          }
+        }
+      } catch (err) {
+        console.warn(
+          `[semanticCron] Could not list existing Exa webhooks before creating; `
+          + `proceeding with create (may duplicate).`,
+          err,
+        );
+      }
+
+      if (!alreadyRegistered) {
+        const response = await exa.websets.webhooks.create({
+          url: targetUrl,
+          events: whEvents,
+        } as any);
+        const raw = response as unknown as Record<string, unknown>;
+        const id = raw.id as string | undefined;
+        const secret = raw.secret as string | undefined;
+        if (id && secret) {
+          saveWebhookSecret(id, secret, raw.url as string | undefined);
+        } else {
+          console.warn(
+            `[semanticCron] webhooks.create returned without an id+secret pair `
+            + `(id=${id ?? 'unknown'}). Signature verification will not work `
+            + `for events from this webhook.`,
+          );
+        }
+      }
+    } catch (err) {
+      console.error(
+        `Failed to register Exa webhook at ${targetUrl} for events `
+        + `${whEvents.join(',')}. Webhook events will not be delivered until this `
+        + `is resolved.`,
+        err,
+      );
     }
   }
 

@@ -117,7 +117,44 @@ function initSchema(db: Database.Database): void {
 
     CREATE INDEX IF NOT EXISTS idx_lens_hits_domain ON lens_hits(company_domain);
     CREATE INDEX IF NOT EXISTS idx_verdicts_domain ON verdicts(company_domain);
+
+    CREATE TABLE IF NOT EXISTS webhook_secrets (
+      webhook_id TEXT PRIMARY KEY,
+      secret TEXT NOT NULL,
+      url TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
   `);
+}
+
+export function saveWebhookSecret(
+  webhookId: string,
+  secret: string,
+  url?: string,
+): void {
+  const stmt = getDb().prepare(
+    `INSERT INTO webhook_secrets (webhook_id, secret, url)
+     VALUES (?, ?, ?)
+     ON CONFLICT(webhook_id) DO UPDATE SET secret = excluded.secret, url = excluded.url`,
+  );
+  stmt.run(webhookId, secret, url ?? null);
+}
+
+export interface WebhookSecretRow {
+  webhookId: string;
+  secret: string;
+  url: string | null;
+}
+
+export function listWebhookSecrets(): WebhookSecretRow[] {
+  const rows = getDb()
+    .prepare('SELECT webhook_id, secret, url FROM webhook_secrets')
+    .all() as Array<{ webhook_id: string; secret: string; url: string | null }>;
+  return rows.map((r) => ({ webhookId: r.webhook_id, secret: r.secret, url: r.url }));
+}
+
+export function deleteWebhookSecret(webhookId: string): void {
+  getDb().prepare('DELETE FROM webhook_secrets WHERE webhook_id = ?').run(webhookId);
 }
 
 // --- Item operations ---
